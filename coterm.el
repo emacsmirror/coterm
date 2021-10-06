@@ -381,7 +381,9 @@ initialize it sensibly."
               ;; be used to handle next output.
               (ignore)))
 
-          (goto-char restore-point))))))
+          (goto-char restore-point)
+          (unless (eq restore-point pmark)
+            (set-marker restore-point nil)))))))
 
 ;;; Mode functions and configuration
 
