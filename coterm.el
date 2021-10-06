@@ -349,7 +349,28 @@ initialize it sensibly."
                             (if (eolp)
                                 (if (eq 1 (car ctl-params)) (dirty))
                               (funcall proc-filt process
-                                       (make-string coterm--t-col ?\s)))))))))))))
+                                       (make-string coterm--t-col ?\s)))))
+                         (?L ;; \E[L - insert lines (terminfo: il, il1)
+                          ;; Remove from bottom
+                          (let ((coterm--t-col 0)
+                                end)
+                            (dirty)
+                            (let ((coterm--t-row coterm-t-height) )
+                              (coterm--t-approximate-pmark pmark)
+                              (setq end (marker-position pmark)))
+                            (let ((coterm--t-row
+                                   (max (- coterm-t-height
+                                           (car ctl-params))
+                                        coterm--t-row)))
+                              (coterm--t-approximate-pmark pmark)
+                              (delete-region pmark end))
+                            (dirty)
+                            ;; Insert new lines
+                            (coterm--t-approximate-pmark pmark)
+                            (unless (= pmark (point-max))
+                              (funcall proc-filt process
+                                       (make-string (car ctl-params) ?\n))))
+                          (dirty))))))))))
 
             (cond
              ((setq match (string-match coterm-t-control-seq-prefix-regexp
