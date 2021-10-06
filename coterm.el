@@ -310,22 +310,46 @@ initialize it sensibly."
                              (cl-decf coterm--t-col (car ctl-params))
                              (setq coterm--t-col (max coterm--t-col 0))
                              (dirty))
-                         (?J ;; \E[J - clear to end of screen (terminfo: ed, clear)
+                         ;; \E[J - clear to end of screen (terminfo: ed, clear)
+                         ((and ?J (guard (eq 0 (car ctl-params))))
                           (ins)
                           (coterm--t-approximate-pmark pmark)
-                          (pcase (car ctl-params)
-                            (0
-                             (delete-region pmark (point-max)))
-                            (1 (coterm--t-normalize-home-offset)
-                               (delete-region coterm--t-home-marker pmark)
-                               (unless (= pmark (point-max))
-                                 ;; Substitute deleted region with empty lines
-                                 (funcall proc-filt process
-                                          (concat (make-string coterm--t-row ?\n)
-                                                  (make-string coterm--t-col ?\s)))))
-                            (_ (coterm--t-normalize-home-offset)
-                               (delete-region coterm--t-home-marker (point-max))))
-                          (dirty))))))))))
+                          (delete-region pmark (point-max))
+                          (dirty))
+                         ((and ?J (guard (eq 1 (car ctl-params))))
+                          (ins)
+                          (coterm--t-approximate-pmark pmark)
+                          (coterm--t-normalize-home-offset)
+                          (delete-region coterm--t-home-marker pmark)
+                          (if (= pmark (point-max))
+                              (dirty)
+                            ;; Substitute deleted region with empty lines
+                            (funcall proc-filt process
+                                     (concat (make-string coterm--t-row ?\n)
+                                             (unless (eq (char-after pmark) ?\n)
+                                               (make-string coterm--t-col ?\s))))))
+                         (?J
+                          (ins)
+                          (coterm--t-normalize-home-offset)
+                          (delete-region coterm--t-home-marker (point-max))
+                          (dirty))
+                         (?K ;; \E[K - clear to end of line (terminfo: el, el1)
+                          (ins)
+                          (coterm--t-approximate-pmark pmark)
+                          (save-excursion
+                            (goto-char pmark)
+                            (if (eq 1 (car ctl-params))
+                                ;; Clear left of pmark
+                                (forward-line 0)
+                              ;; Clear right of pmark
+                              (forward-line 1)
+                              (unless (eobp)
+                                (backward-char)))
+                            (delete-region (point) pmark)
+                            (if (eolp)
+                                (if (eq 1 (car ctl-params)) (dirty))
+                              (funcall proc-filt process
+                                       (make-string coterm--t-col ?\s)))))))))))))
 
             (cond
              ((setq match (string-match coterm-t-control-seq-prefix-regexp
