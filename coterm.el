@@ -114,6 +114,25 @@ non-whitespace text."
     (setq coterm--t-pmark-in-sync t)
     (coterm--t-normalize-home-offset)))
 
+;; Moves pmark
+(defun coterm--t-approximate-pmark (pmark)
+  "Sets PMARK to point close to `coterm--t-row' and col.
+Don't modify buffer.  If `coterm--t-row' and `coterm--t-col'
+point to an unreachable location, locate PMARK as close to it as
+possible and return nil.  Otherwise, locate PMARK exactly and
+return t."
+  (or coterm--t-pmark-in-sync
+      (save-excursion
+        (goto-char coterm--t-home-marker)
+        (setq coterm--t-pmark-in-sync
+              (prog1
+                  (and
+                   (zerop (forward-line
+                           (+ coterm--t-home-offset coterm--t-row)))
+                   (bolp)
+                   (<= coterm--t-col (move-to-column coterm--t-col)))
+                (set-marker pmark (point)))))))
+
 ;; Moves pmark and inserts
 (defun coterm--t-insert (proc-filt process str newlines)
   "Insert STR using PROC-FILT and PROCESS.
@@ -293,14 +312,7 @@ initialize it sensibly."
                              (dirty))
                          (?J ;; \E[J - clear to end of screen (terminfo: ed, clear)
                           (ins)
-                          (save-excursion
-                            (goto-char coterm--t-home-marker)
-                            (and
-                             (zerop (forward-line
-                                     (+ coterm--t-home-offset coterm--t-row)))
-                             (bolp)
-                             (move-to-column coterm--t-col))
-                            (set-marker pmark (point)))
+                          (coterm--t-approximate-pmark pmark)
                           (pcase (car ctl-params)
                             (0
                              (delete-region pmark (point-max)))
@@ -335,23 +347,12 @@ initialize it sensibly."
             ;; and `coterm--t-col' may point to a not yet existent location
             ;; after (point-max).  First, we move `pmark' as close to this
             ;; position as possible.
-            (if (or coterm--t-pmark-in-sync
-                    (equal
-                     '(0 . t)
-                     (save-excursion
-                       (goto-char coterm--t-home-marker)
-                       (prog1
-                           (cons
-                            (let ((newlines (forward-line
-                                             (+ coterm--t-row coterm--t-home-offset))))
-                              (if (bolp) newlines nil))
-                            (unless (eobp)
-                              (>= coterm--t-col (move-to-column coterm--t-col))))
-                         (set-marker pmark (point))))))
+            (if (coterm--t-approximate-pmark pmark)
                 ;; If we succeed, clear `coterm--t-row' and col.  On next
                 ;; output, we will initialize them to point to `pmark'.
                 (setq coterm--t-row nil
-                      coterm--t-col nil)
+                      coterm--t-col nil
+                      coterm--t-pmark-in-sync nil)
               ;; If we don't succeed, leave the variables unchanged.  They will
               ;; be used to handle next output.
               (ignore)))
