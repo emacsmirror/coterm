@@ -49,6 +49,48 @@ In sync with variables `coterm--t-home-marker',
   (setq coterm-t-height height)
   (setq coterm-t-width width))
 
+(defun coterm--t-point (row col)
+  "Return position that approximates ROW and COL."
+  (save-excursion
+    (goto-char coterm--t-home-marker)
+    (and
+     (zerop (forward-line
+             (+ coterm--t-home-offset row)))
+     (not (eobp))
+     (move-to-column col))
+    (point)))
+
+(defun coterm--t-delete-region (row1 col1 row2 col2)
+  (delete-region (coterm--t-point row1 col1)
+                 (coterm--t-point row2 col2))
+  (setq coterm--t-pmark-in-sync nil))
+
+(defun coterm--t-clear-region (proc-filt process row1 col1 row2 col2)
+  (save-excursion
+    (let ((p1 (coterm--t-point row1 col1))
+          (p2 (coterm--t-point row2 col2))
+          row col h)
+      (if (> p2 p1)
+          (setq row row1 col col1
+                h (- row2 row1))
+        (setq row row2 col col2
+              h (- row1 row2)))
+      (delete-region p1 p2)
+      (coterm--t-open-space proc-filt process row col h (abs (- col2 col1)))
+      (setq coterm--t-pmark-in-sync nil))))
+
+(defun coterm--t-open-space (proc-filt process row col height width)
+  (save-excursion
+    (goto-char (coterm--t-point row col))
+    (unless (eobp)
+      (set-marker (process-mark process) (point))
+      (funcall
+       proc-filt process
+       (concat (make-string height ?\n)
+               (unless (eolp)
+                 (make-string (+ width (if (= row 0) 0 col)) ?\s))))
+      (setq coterm--t-pmark-in-sync nil))))
+
 (defun coterm--t-normalize-home-offset ()
   (save-excursion
     (goto-char coterm--t-home-marker)
@@ -268,9 +310,9 @@ initialize it sensibly."
                    (?8 (ins) ;; Restore cursor (terminfo: rc)
                        (when-let ((cursor coterm--t-saved-cursor))
                          (setq coterm--t-row (car cursor))
-                         (setq cursor (cdr (cursor)))
+                         (setq cursor (cdr cursor))
                          (setq coterm--t-col (car cursor))
-                         (setq cursor (cdr (cursor)))
+                         (setq cursor (cdr cursor))
                          (when (car cursor)
                            (setq coterm--t-row (caar cursor)))))
                    (?c (ins) ;; \Ec - Reset (terminfo: rs1)
@@ -313,64 +355,33 @@ initialize it sensibly."
                          ;; \E[J - clear to end of screen (terminfo: ed, clear)
                          ((and ?J (guard (eq 0 (car ctl-params))))
                           (ins)
-                          (coterm--t-approximate-pmark pmark)
-                          (delete-region pmark (point-max))
+                          (delete-region (coterm--t-point coterm--t-row coterm--t-col)
+                                         (point-max))
                           (dirty))
                          ((and ?J (guard (eq 1 (car ctl-params))))
                           (ins)
-                          (coterm--t-approximate-pmark pmark)
-                          (coterm--t-normalize-home-offset)
-                          (delete-region coterm--t-home-marker pmark)
-                          (if (= pmark (point-max))
-                              (dirty)
-                            ;; Substitute deleted region with empty lines
-                            (funcall proc-filt process
-                                     (concat (make-string coterm--t-row ?\n)
-                                             (unless (eq (char-after pmark) ?\n)
-                                               (make-string coterm--t-col ?\s))))))
+                          (coterm--t-clear-region
+                           proc-filt process 0 0 coterm--t-row coterm--t-col))
                          (?J
                           (ins)
-                          (coterm--t-normalize-home-offset)
-                          (delete-region coterm--t-home-marker (point-max))
+                          (delete-region (coterm--t-point 0 0) (point-max))
                           (dirty))
                          (?K ;; \E[K - clear to end of line (terminfo: el, el1)
                           (ins)
-                          (coterm--t-approximate-pmark pmark)
-                          (save-excursion
-                            (goto-char pmark)
-                            (if (eq 1 (car ctl-params))
-                                ;; Clear left of pmark
-                                (forward-line 0)
-                              ;; Clear right of pmark
-                              (forward-line 1)
-                              (unless (eobp)
-                                (backward-char)))
-                            (delete-region (point) pmark)
-                            (if (eolp)
-                                (if (eq 1 (car ctl-params)) (dirty))
-                              (funcall proc-filt process
-                                       (make-string coterm--t-col ?\s)))))
+                          (coterm--t-clear-region
+                           proc-filt process
+                           coterm--t-row coterm--t-col
+                           coterm--t-row (if (eq 1 (car ctl-params)) 0
+                                           coterm-t-width)))
                          (?L ;; \E[L - insert lines (terminfo: il, il1)
                           ;; Remove from bottom
-                          (let ((coterm--t-col 0)
-                                end)
-                            (dirty)
-                            (let ((coterm--t-row coterm-t-height) )
-                              (coterm--t-approximate-pmark pmark)
-                              (setq end (marker-position pmark)))
-                            (let ((coterm--t-row
-                                   (max (- coterm-t-height
-                                           (car ctl-params))
-                                        coterm--t-row)))
-                              (coterm--t-approximate-pmark pmark)
-                              (delete-region pmark end))
-                            (dirty)
-                            ;; Insert new lines
-                            (coterm--t-approximate-pmark pmark)
-                            (unless (= pmark (point-max))
-                              (funcall proc-filt process
-                                       (make-string (car ctl-params) ?\n))))
-                          (dirty))))))))))
+                          (coterm--t-delete-region
+                           coterm-t-height 0
+                           (- coterm-t-height (car ctl-params)))
+                          ;; Insert at position
+                          (coterm--t-open-space
+                           proc-filt process coterm--t-row 0
+                           (car ctl-params) 0))))))))))
 
             (cond
              ((setq match (string-match coterm-t-control-seq-prefix-regexp
