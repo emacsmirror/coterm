@@ -3,7 +3,7 @@
 ;;; Terminal emulation
 
 ;; Removed \t, \032 (\C-z), \eAnSiT
-(defconst coterm-t-control-seq-regexp
+(defconst coterm--t-control-seq-regexp
   (concat
    ;; A control character,
    "\\(?:[\r\n\000\007\b\016\017]\\|"
@@ -14,11 +14,11 @@
    "\\[\\([\x30-\x3F]*\\)[\x20-\x2F]*[\x40-\x7E]\\)\\)")
   "Regexp matching control sequences handled by term.el.")
 
-(defconst coterm-t-control-seq-prefix-regexp "\e")
+(defconst coterm--t-control-seq-prefix-regexp "\e")
 
-(defvar-local coterm-t-height t
+(defvar-local coterm--t-height t
   "Number of lines in window.")
-(defvar-local coterm-t-width nil
+(defvar-local coterm--t-width nil
   "Number of columns in window.")
 
 (defvar-local coterm--t-home-marker nil
@@ -41,13 +41,13 @@ In sync with variables `coterm--t-home-marker',
 `coterm--t-home-offset', `coterm--t-row' and `coterm--t-col'")
 
 (defvar-local coterm--t-saved-cursor nil)
-(defvar-local coterm-t-insert-mode nil)
+(defvar-local coterm--t-insert-mode nil)
 
 (defvar-local coterm--t-unhandled-fragment nil)
 
 (defun coterm--t-reset-size (height width)
-  (setq coterm-t-height height)
-  (setq coterm-t-width width))
+  (setq coterm--t-height height)
+  (setq coterm--t-width width))
 
 (defun coterm--t-point (row col)
   "Return position that approximates ROW and COL."
@@ -91,7 +91,7 @@ In sync with variables `coterm--t-home-marker',
                  (make-string (+ width (if (= height 0) 0 col)) ?\s))))
       ;; Delete chars that are after the width of the terminal
       (goto-char (process-mark process))
-      (move-to-column coterm-t-width)
+      (move-to-column coterm--t-width)
       (delete-region (point) (progn (forward-line 1) (1- (point))))
       (setq coterm--t-pmark-in-sync nil))))
 
@@ -105,8 +105,8 @@ In sync with variables `coterm--t-home-marker',
       (set-marker coterm--t-home-marker (point))
       (setq coterm--t-home-offset left-to-move))))
 
-(defun coterm-t-scroll-into-view ()
-  (let ((height coterm-t-height)
+(defun coterm--t-scroll-into-view ()
+  (let ((height coterm--t-height)
         (row coterm--t-row)
         (home coterm--t-home-marker))
     (cond
@@ -129,10 +129,10 @@ In sync with variables `coterm--t-home-marker',
         (cl-incf coterm--t-home-offset 0)
         (setq coterm--t-row 0))))))
 
-(defun coterm-t-down (n)
+(defun coterm--t-down (n)
   (cl-incf coterm--t-row n)
   (setq coterm--t-pmark-in-sync nil)
-  (coterm-t-scroll-into-view))
+  (coterm--t-scroll-into-view))
 
 ;; Moves pmark, inserts
 (defun coterm--t-adjust-pmark (proc-filt process)
@@ -193,16 +193,16 @@ buffer."
     (goto-char (process-mark process))
     (let ((column (current-column)))
       (if (zerop newlines)
-          (if coterm-t-insert-mode
+          (if coterm--t-insert-mode
               (progn
-                (move-to-column coterm-t-width)
+                (move-to-column coterm--t-width)
                 (delete-region
                  (point) (progn (forward-line 1) (1- (point)))))
             (delete-region
              (point)
              (progn (move-to-column (- (* 2 column) coterm--t-col)) (point))))
         (cl-incf coterm--t-row newlines)
-        (coterm-t-scroll-into-view))
+        (coterm--t-scroll-into-view))
       (setq coterm--t-col column))))
 
 ;; Depends on pmark
@@ -222,17 +222,17 @@ initialize it sensibly."
       (if (> (point) coterm--t-home-marker)
           (save-restriction
             (narrow-to-region coterm--t-home-marker (point))
-            (let ((lines-left (forward-line (- 1 coterm-t-height))))
+            (let ((lines-left (forward-line (- 1 coterm--t-height))))
               (when (= 0 lines-left)
                 (set-marker coterm--t-home-marker (point)))
-              (setq coterm--t-row (+ -1 coterm-t-height lines-left))))
+              (setq coterm--t-row (+ -1 coterm--t-height lines-left))))
         (progn
           (set-marker coterm--t-home-marker (point))
           (setq coterm--t-home-offset 0)
           (setq coterm--t-row 0))))
     (setq coterm--t-pmark-in-sync t)))
 
-(defun coterm-t-emulate-terminal (proc-filt process string)
+(defun coterm--t-emulate-terminal (proc-filt process string)
   (when-let ((fragment coterm--t-unhandled-fragment))
     (setq string (concat fragment string))
     (setq coterm--t-unhandled-fragment nil))
@@ -277,7 +277,7 @@ initialize it sensibly."
               ;; prevent changing this user input by narrowing the buffer
               (narrow-to-region (point-min) pmark))
 
-            (while (setq match (string-match coterm-t-control-seq-regexp
+            (while (setq match (string-match coterm--t-control-seq-regexp
                                              string ctl-end))
               (setq ctl-params (match-string 1 string))
               (setq ctl-end (match-end 0))
@@ -289,7 +289,7 @@ initialize it sensibly."
                  (pass-through)
                  (cl-incf will-insert-newlines))
                 (?\n (ins)
-                     (coterm-t-down 1)
+                     (coterm--t-down 1)
                      (setq coterm--t-col 0))
                 (?\r (ins) ;; (terminfo: cr)
                      (setq coterm--t-col 0)
@@ -305,11 +305,11 @@ initialize it sensibly."
                 (?\e
                  (pcase (aref string (1+ match))
                    (?D (ins)
-                       (coterm-t-down 1))
+                       (coterm--t-down 1))
                    (?M (ins) ;; (terminfo: ri)
-                       (coterm-t-down -1))
+                       (coterm--t-down -1))
                    (?7 (ins) ;; Save cursor (terminfo: sc)
-                       (coterm-t-scroll-into-view)
+                       (coterm--t-scroll-into-view)
                        (setq coterm--t-saved-cursor
                              (list coterm--t-row
                                    coterm--t-col
@@ -317,9 +317,9 @@ initialize it sensibly."
                                      (list ansi-color-context-region)))))
                    (?8 (ins) ;; Restore cursor (terminfo: rc)
                        (when-let ((cursor coterm--t-saved-cursor))
-                         (setq coterm--t-row (max (car cursor) (1- coterm-t-height)))
+                         (setq coterm--t-row (max (car cursor) (1- coterm--t-height)))
                          (setq cursor (cdr cursor))
-                         (setq coterm--t-col (max (car cursor) (1- coterm-t-width)))
+                         (setq coterm--t-col (max (car cursor) (1- coterm--t-width)))
                          (setq cursor (cdr cursor))
                          (when (car cursor)
                            (setq ansi-color-context-region (caar cursor)))))
@@ -329,7 +329,7 @@ initialize it sensibly."
                          (setq ansi-color-context-region nil))
                        (setq coterm--t-row 0)
                        (setq coterm--t-col 0)
-                       (setq coterm-t-insert-mode nil))
+                       (setq coterm--t-insert-mode nil))
                    (?\[
                     (pcase (aref string (1- ctl-end))
                       (?m    ; Let `comint-output-filter-functions' handle this
@@ -341,9 +341,9 @@ initialize it sensibly."
                        (pcase char
                          (?H ;; cursor motion (terminfo: cup,home)
                           (setq coterm--t-row
-                                (1- (max 1 (min (or (nth 0 ctl-params) 0) coterm-t-height))))
+                                (1- (max 1 (min (or (nth 0 ctl-params) 0) coterm--t-height))))
                           (setq coterm--t-col
-                                (1- (max 1 (min (or (nth 1 ctl-params) 0) coterm-t-width))))
+                                (1- (max 1 (min (or (nth 1 ctl-params) 0) coterm--t-width))))
                           (dirty))
                          (?A ;; cursor up (terminfo: cuu, cuu1)
                           (cl-decf coterm--t-row (car-or-1))
@@ -351,11 +351,11 @@ initialize it sensibly."
                           (dirty))
                          (?B ;; cursor down (terminfo: cud)
                           (cl-incf coterm--t-row (car-or-1))
-                          (setq coterm--t-row (min coterm--t-row (1- coterm-t-height)))
+                          (setq coterm--t-row (min coterm--t-row (1- coterm--t-height)))
                           (dirty))
                          (?C ;; \E[C - cursor right (terminfo: cuf, cuf1)
                           (cl-incf coterm--t-col (car-or-1))
-                          (setq coterm--t-col (min coterm--t-col (1- coterm-t-width)))
+                          (setq coterm--t-col (min coterm--t-col (1- coterm--t-width)))
                           (dirty))
                          (?D ;; \E[D - cursor left (terminfo: cub)
                           (cl-decf coterm--t-col (car-or-1))
@@ -377,12 +377,12 @@ initialize it sensibly."
                            proc-filt process
                            coterm--t-row coterm--t-col
                            coterm--t-row (if (eq 1 (car ctl-params)) 0
-                                           coterm-t-width)))
+                                           coterm--t-width)))
                          (?L ;; \E[L - insert lines (terminfo: il, il1)
                           ;; Remove from bottom
                           (coterm--t-delete-region
-                           (- coterm-t-height (car-or-1)) 0
-                           coterm-t-height 0)
+                           (- coterm--t-height (car-or-1)) 0
+                           coterm--t-height 0)
                           ;; Insert at position
                           (coterm--t-open-space
                            proc-filt process coterm--t-row 0
@@ -390,7 +390,7 @@ initialize it sensibly."
                          (?M ;; \E[M - delete lines (terminfo: dl, dl1)
                           ;; Insert at bottom
                           (coterm--t-open-space
-                           proc-filt process coterm-t-height 0
+                           proc-filt process coterm--t-height 0
                            (car-or-1) 0)
                           ;; Remove at position
                           (coterm--t-delete-region
@@ -408,20 +408,20 @@ initialize it sensibly."
                              0 width)
                             (cl-incf coterm--t-col width)
                             (setq coterm--t-col (min coterm--t-col
-                                                     (1- coterm-t-width)))
+                                                     (1- coterm--t-width)))
                             (dirty)))
                          (?h ;; \E[?h - DEC Private Mode Set
                           (pcase (car ctl-params)
                             ;; (49 ;; (terminfo: smcup)
-                            ;;  (coterm-t-switch-to-alternate-sub-buffer t))
+                            ;;  (coterm--t-switch-to-alternate-sub-buffer t))
                             (4 ;; (terminfo: smir)
-                             (setq coterm-t-insert-mode t))))
+                             (setq coterm--t-insert-mode t))))
                          (?l ;; \E[?l - DEC Private Mode Reset
                           (pcase (car ctl-params)
                             ;; (49 ;; (terminfo: rmcup)
-                            ;;  (coterm-t-switch-to-alternate-sub-buffer nil))
+                            ;;  (coterm--t-switch-to-alternate-sub-buffer nil))
                             (4 ;; (terminfo: rmir)
-                             (setq coterm-t-insert-mode nil))))
+                             (setq coterm--t-insert-mode nil))))
                          (?n ;; \E[6n - Report cursor position (terminfo: u7)
                           (process-send-string
                            process
@@ -431,9 +431,9 @@ initialize it sensibly."
                                    (1+ coterm--t-col))))))))))))
 
             (cond
-             ((setq match (string-match coterm-t-control-seq-prefix-regexp
+             ((setq match (string-match coterm--t-control-seq-prefix-regexp
                                         string ctl-end))
-              (while (setq match (string-match coterm-t-control-seq-prefix-regexp
+              (while (setq match (string-match coterm--t-control-seq-prefix-regexp
                                                string (1+ match)))
                 (setq ctl-end (1+ match)))
               (ins)
@@ -473,8 +473,8 @@ initialize it sensibly."
 (defun coterm-comint-exec-h ()
   (when-let (((derived-mode-p #'comint-mode))
              (process (get-buffer-process (current-buffer))))
-    (setq coterm-t-height (floor (window-screen-lines)))
-    (setq coterm-t-width (window-max-chars-per-line))
+    (setq coterm--t-height (floor (window-screen-lines)))
+    (setq coterm--t-width (window-max-chars-per-line))
     (setq-local comint-inhibit-carriage-motion t)
 
     (add-function :filter-return
@@ -486,7 +486,7 @@ initialize it sensibly."
                   '((name . coterm-maybe-reset-size)))
 
     (add-function :around (process-filter process)
-                  #'coterm-t-emulate-terminal))
+                  #'coterm--t-emulate-terminal))
 
   ;; After `term-exec-hook', the major mode is often changed (for example into
   ;; `shell-mode', which kills our local variables, so set them again after
