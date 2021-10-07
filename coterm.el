@@ -377,12 +377,21 @@ initialize it sensibly."
                          (?L ;; \E[L - insert lines (terminfo: il, il1)
                           ;; Remove from bottom
                           (coterm--t-delete-region
-                           coterm-t-height 0
-                           (- coterm-t-height (car ctl-params)))
+                           (- coterm-t-height (car ctl-params)) 0
+                           coterm-t-height 0)
                           ;; Insert at position
                           (coterm--t-open-space
                            proc-filt process coterm--t-row 0
-                           (car ctl-params) 0))))))))))
+                           (car ctl-params) 0))
+                         (?M ;; \E[M - delete lines (terminfo: dl, dl1)
+                          ;; Insert at bottom
+                          (coterm--t-open-space
+                           proc-filt process coterm-t-height 0
+                           (car ctl-params) 0)
+                          ;; Remove at position
+                          (coterm--t-delete-region
+                           coterm--t-row 0
+                           (+ coterm--t-row (car ctl-params)) 0))))))))))
 
             (cond
              ((setq match (string-match coterm-t-control-seq-prefix-regexp
@@ -429,6 +438,7 @@ initialize it sensibly."
              (process (get-buffer-process (current-buffer))))
     (setq coterm-t-height (floor (window-screen-lines)))
     (setq coterm-t-width (window-max-chars-per-line))
+    (setq-local comint-inhibit-carriage-motion t)
 
     (add-function :filter-return
                   (local 'window-adjust-process-window-size-function)
