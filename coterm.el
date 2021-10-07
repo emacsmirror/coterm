@@ -106,22 +106,23 @@ In sync with variables `coterm--t-home-marker',
         (row coterm--t-row)
         (home coterm--t-home-marker))
     (cond
-     ((> row height)
+     ((>= row height)
       (save-excursion
         (goto-char home)
         (let ((left-to-move (forward-line (+ coterm--t-home-offset
-                                             (- row height 1)))))
+                                             (- row height -1)))))
           (unless (bolp)
             (cl-incf left-to-move)
             (forward-line 0))
           (set-marker home (point))
-          (cl-incf coterm--t-home-offset left-to-move)
-          (setq coterm--t-row height))))
+          (setq coterm--t-home-offset left-to-move)
+          (setq coterm--t-row (1- height)))))
      ((< row 0)
       (save-excursion
         (goto-char home)
         (forward-line row)
         (set-marker home (point))
+        (cl-incf coterm--t-home-offset 0)
         (setq coterm--t-row 0))))))
 
 (defun coterm-t-down (n)
