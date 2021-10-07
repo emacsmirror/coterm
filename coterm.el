@@ -16,10 +16,14 @@
 
 (defconst coterm--t-control-seq-prefix-regexp "\e")
 
-(defvar-local coterm--t-height t
+(defvar-local coterm--t-height nil
   "Number of lines in window.")
 (defvar-local coterm--t-width nil
   "Number of columns in window.")
+(defvar-local coterm--t-scroll-beg nil
+  "First row of the scrolling area.")
+(defvar-local coterm--t-scroll-end nil
+  "First row after the end of the scrolling area.")
 
 (defvar-local coterm--t-home-marker nil
   "Marks the \"home\" position for cursor addressing.
@@ -42,13 +46,21 @@ In sync with variables `coterm--t-home-marker',
 
 (defvar-local coterm--t-saved-cursor nil)
 (defvar-local coterm--t-insert-mode nil)
-
 (defvar-local coterm--t-unhandled-fragment nil)
 
 (defun coterm--t-reset-size (height width)
   (setq coterm--t-height height)
   (setq coterm--t-width width)
-  (setq coterm--t-col (max coterm--t-col (1- coterm--t-width))))
+  (setq coterm--t-scroll-beg 0)
+  (setq coterm--t-scroll-end height)
+  (setq coterm--t-pmark-in-sync nil)
+
+  (when coterm--t-row
+    (setq coterm--t-col (max coterm--t-col (1- coterm--t-width)))
+    (when (>= coterm--t-row coterm--t-height)
+      (cl-incf coterm--t-home-offset (- coterm--t-row coterm--t-height -1))
+      (setq coterm--t-row (1- coterm--t-height))
+      (coterm--t-normalize-home-offset))))
 
 (defun coterm--t-point (row col)
   "Return position that approximates ROW and COL."
@@ -104,36 +116,59 @@ In sync with variables `coterm--t-home-marker',
         (cl-incf left-to-move)
         (forward-line 0))
       (set-marker coterm--t-home-marker (point))
-      (setq coterm--t-home-offset left-to-move))))
+      (setq coterm--t-home-offset (max 0 left-to-move)))))
 
-(defun coterm--t-scroll-into-view ()
-  (let ((height coterm--t-height)
-        (row coterm--t-row)
-        (home coterm--t-home-marker))
-    (cond
-     ((>= row height)
-      (save-excursion
-        (goto-char home)
-        (let ((left-to-move (forward-line (+ coterm--t-home-offset
-                                             (- row height -1)))))
-          (unless (bolp)
-            (cl-incf left-to-move)
-            (forward-line 0))
-          (set-marker home (point))
-          (setq coterm--t-home-offset left-to-move)
-          (setq coterm--t-row (1- height)))))
-     ((< row 0)
-      (save-excursion
-        (goto-char home)
-        (forward-line row)
-        (set-marker home (point))
-        (cl-incf coterm--t-home-offset 0)
-        (setq coterm--t-row 0))))))
+(defun coterm--t-scroll-by-deletion-p ()
+  (or (/= coterm--t-scroll-beg 0)
+      (/= coterm--t-scroll-end coterm--t-height)))
 
-(defun coterm--t-down (n)
-  (cl-incf coterm--t-row n)
-  (setq coterm--t-pmark-in-sync nil)
-  (coterm--t-scroll-into-view))
+(defun coterm--t-down-line (proc-filt process)
+  "Go down one line or scroll if at bottom.
+This takes into account the scroll region as specified by
+`coterm--t-scroll-beg' and `coterm--t-scroll-end'.  If required
+PROC-FILT and PROCESS are used to scroll with deletion and
+insertion of empty lines."
+  (cond
+   ((and (= coterm--t-row (1- coterm--t-scroll-end))
+         (coterm--t-scroll-by-deletion-p))
+    (coterm--t-delete-region coterm--t-scroll-beg 0
+                             (1+ coterm--t-scroll-beg) 0)
+    (coterm--t-open-space proc-filt process
+                          coterm--t-row 0 1 0))
+   ((and (= coterm--t-row (1- coterm--t-height))
+         (coterm--t-scroll-by-deletion-p))
+    ;; Behaviour of xterm
+    (ignore))
+   ((< coterm--t-row (1- coterm--t-height))
+    (cl-incf coterm--t-row))
+   (t
+    (cl-incf coterm--t-home-offset)
+    (coterm--t-normalize-home-offset)))
+  (setq coterm--t-pmark-in-sync nil))
+
+(defun coterm--t-up-line (proc-filt process)
+  "Go up one line or scroll if at top.
+This takes into account the scroll region as specified by
+`coterm--t-scroll-beg' and `coterm--t-scroll-end'.  If required
+PROC-FILT and PROCESS are used to scroll with deletion and
+insertion of empty lines."
+  (cond
+   ((and (= coterm--t-row coterm--t-scroll-beg)
+         (coterm--t-scroll-by-deletion-p))
+    (coterm--t-delete-region (1- coterm--t-scroll-end) 0
+                             coterm--t-scroll-end 0)
+    (coterm--t-open-space proc-filt process
+                          coterm--t-row 0 1 0))
+   ((and (= coterm--t-row 0)
+         (coterm--t-scroll-by-deletion-p))
+    ;; Behaviour of xterm
+    (ignore))
+   ((< 0 coterm--t-row)
+    (cl-decf coterm--t-row))
+   (t
+    (cl-decf coterm--t-home-offset)
+    (coterm--t-normalize-home-offset)))
+  (setq coterm--t-pmark-in-sync nil))
 
 ;; Moves pmark, inserts
 (defun coterm--t-adjust-pmark (proc-filt process)
@@ -186,8 +221,8 @@ return t."
   "Insert STR using PROC-FILT and PROCESS.
 Synchronise PROCESS's mark beforehand and insert at its position.
 NEWLINES is the number of newlines STR contains. Unless it is
-zero, insertion should happen at the end of accessible portion of
-buffer."
+zero, insertion must happen at the end of accessible portion of
+buffer and the scrolling region must cover the whole screen."
   (coterm--t-adjust-pmark proc-filt process)
   (funcall proc-filt process str)
   (save-excursion
@@ -203,8 +238,16 @@ buffer."
              (point)
              (progn (move-to-column (- (* 2 column) coterm--t-col)) (point))))
         (cl-incf coterm--t-row newlines)
-        (coterm--t-scroll-into-view))
-      (setq coterm--t-col column))))
+        ;; We've inserted newlines, so we must scroll if necessary
+        (when (>= coterm--t-row coterm--t-height)
+          (save-excursion
+            (goto-char coterm--t-home-marker)
+            (forward-line (+ coterm--t-home-offset
+                             (- coterm--t-row coterm--t-height -1)))
+            (set-marker coterm--t-home-marker (point))
+            (setq coterm--t-home-offset 0)
+            (setq coterm--t-row (1- coterm--t-height)))))
+      (setq coterm--t-col (min column (1- coterm--t-width))))))
 
 ;; Depends on pmark
 (defun coterm--t-maybe-adjust-from-pmark (pos)
@@ -221,6 +264,7 @@ initialize it sensibly."
       (coterm--t-normalize-home-offset)
       (forward-line 0)
       (if (> (point) coterm--t-home-marker)
+          ;; Here, `coterm--t-home-offset' is guaranteed to be 0
           (save-restriction
             (narrow-to-region coterm--t-home-marker (point))
             (let ((lines-left (forward-line (- 1 coterm--t-height))))
@@ -243,7 +287,7 @@ initialize it sensibly."
          (will-insert-newlines 0)
          restore-point
          last-match-end
-         buf fragment
+         buf
          ctl-params ctl-end)
 
     (cl-macrolet
@@ -261,7 +305,9 @@ initialize it sensibly."
          (pass-through ()
            `(ignore))
          (car-or-1 ()
-           `(max 1 (car ctl-params))))
+           `(max 1 (car ctl-params)))
+         (cadr-or-0 ()
+           `(or (cadr ctl-params) 0)))
 
       (if (not (and string
                     (setq buf (process-buffer process))
@@ -286,18 +332,18 @@ initialize it sensibly."
               (pcase (aref string match)
                 ((and ?\n
                       (guard coterm--t-pmark-in-sync)
-                      (guard (= pmark (point-max))))
+                      (guard (= pmark (point-max)))
+                      (guard (not (coterm--t-scroll-by-deletion-p))))
                  (pass-through)
                  (cl-incf will-insert-newlines))
-                (?\n (ins)
-                     (coterm--t-down 1)
+                (?\n (ins) ;; (terminfo: cud1, ind)
+                     (coterm--t-down-line proc-filt process)
                      (setq coterm--t-col 0))
                 (?\r (ins) ;; (terminfo: cr)
                      (setq coterm--t-col 0)
                      (dirty))
                 (?\b (ins) ;; (terminfo: cub1)
-                     (cl-decf coterm--t-col 1)
-                     (setq coterm--t-col (max coterm--t-col 0))
+                     (setq coterm--t-col (max (1- coterm--t-col) 0))
                      (dirty))
                 (?\C-g (ins) ;; (terminfo: bel)
                        (beep t))
@@ -306,16 +352,16 @@ initialize it sensibly."
                 (?\e
                  (pcase (aref string (1+ match))
                    (?D (ins)
-                       (coterm--t-down 1))
+                       (coterm--t-down-line proc-filt process))
                    (?M (ins) ;; (terminfo: ri)
-                       (coterm--t-down -1))
+                       (coterm--t-up-line proc-filt process))
                    (?7 (ins) ;; Save cursor (terminfo: sc)
-                       (coterm--t-scroll-into-view)
                        (setq coterm--t-saved-cursor
                              (list coterm--t-row
                                    coterm--t-col
                                    (when (boundp 'ansi-color-context-region)
-                                     (list ansi-color-context-region)))))
+                                     (cons ansi-color-context-region
+                                           ansi-color-context)))))
                    (?8 (ins) ;; Restore cursor (terminfo: rc)
                        (when-let ((cursor coterm--t-saved-cursor))
                          (setq coterm--t-row (max (car cursor) (1- coterm--t-height)))
@@ -323,13 +369,17 @@ initialize it sensibly."
                          (setq coterm--t-col (max (car cursor) (1- coterm--t-width)))
                          (setq cursor (cdr cursor))
                          (when (car cursor)
-                           (setq ansi-color-context-region (caar cursor)))))
+                           (setq ansi-color-context-region (caar cursor))
+                           (setq ansi-color-context (cdar cursor)))))
                    (?c (ins) ;; \Ec - Reset (terminfo: rs1)
                        (erase-buffer)
                        (when (boundp 'ansi-color-context-region)
-                         (setq ansi-color-context-region nil))
+                         (setq ansi-color-context-region nil)
+                         (setq ansi-color-context nil))
                        (setq coterm--t-row 0)
                        (setq coterm--t-col 0)
+                       (setq coterm--t-scroll-beg 0)
+                       (setq coterm--t-scroll-end coterm--t-height)
                        (setq coterm--t-insert-mode nil))
                    (?\[
                     (pcase (aref string (1- ctl-end))
@@ -342,30 +392,31 @@ initialize it sensibly."
                        (pcase char
                          (?H ;; cursor motion (terminfo: cup,home)
                           (setq coterm--t-row
-                                (1- (max 1 (min (or (nth 0 ctl-params) 0) coterm--t-height))))
+                                (1- (max 1 (min (car-or-1) coterm--t-height))))
                           (setq coterm--t-col
-                                (1- (max 1 (min (or (nth 1 ctl-params) 0) coterm--t-width))))
+                                (1- (max 1 (min (cadr-or-0) coterm--t-width))))
                           (dirty))
                          (?A ;; cursor up (terminfo: cuu, cuu1)
-                          (cl-decf coterm--t-row (car-or-1))
-                          (setq coterm--t-row (max coterm--t-row 0))
+                          (setq coterm--t-row (max (- coterm--t-row (car-or-1))
+                                                   coterm--t-scroll-beg))
                           (dirty))
                          (?B ;; cursor down (terminfo: cud)
-                          (cl-incf coterm--t-row (car-or-1))
-                          (setq coterm--t-row (min coterm--t-row (1- coterm--t-height)))
+                          (setq coterm--t-row (min (+ coterm--t-row (car-or-1))
+                                                   (1- coterm--t-scroll-end)))
                           (dirty))
                          (?C ;; \E[C - cursor right (terminfo: cuf, cuf1)
-                          (cl-incf coterm--t-col (car-or-1))
-                          (setq coterm--t-col (min coterm--t-col (1- coterm--t-width)))
+                          (setq coterm--t-col (min (+ coterm--t-col (car-or-1))
+                                                   (1- coterm--t-width)))
                           (dirty))
                          (?D ;; \E[D - cursor left (terminfo: cub)
-                          (cl-decf coterm--t-col (car-or-1))
-                          (setq coterm--t-col (max coterm--t-col 0))
+                          (setq coterm--t-col (max (- coterm--t-col (car-or-1))
+                                                   0))
                           (dirty))
                          ;; \E[J - clear to end of screen (terminfo: ed, clear)
                          ((and ?J (guard (eq 0 (car ctl-params))))
-                          (delete-region (coterm--t-point coterm--t-row coterm--t-col)
-                                         (point-max))
+                          (delete-region
+                           (coterm--t-point coterm--t-row coterm--t-col)
+                           (point-max))
                           (dirty))
                          ((and ?J (guard (eq 1 (car ctl-params))))
                           (coterm--t-clear-region
@@ -380,29 +431,36 @@ initialize it sensibly."
                            coterm--t-row (if (eq 1 (car ctl-params)) 0
                                            coterm--t-width)))
                          (?L ;; \E[L - insert lines (terminfo: il, il1)
-                          ;; Remove from bottom
-                          (coterm--t-delete-region
-                           (- coterm--t-height (car-or-1)) 0
-                           coterm--t-height 0)
-                          ;; Insert at position
-                          (coterm--t-open-space
-                           proc-filt process coterm--t-row 0
-                           (car-or-1) 0))
+                          (let*
+                              ((where (max coterm--t-row coterm--t-scroll-beg))
+                               (lines (+ (- coterm--t-row where) (car-or-1))))
+                            ;; Remove from bottom
+                            (coterm--t-delete-region
+                             (- coterm--t-scroll-end lines) 0
+                             coterm--t-scroll-end 0)
+                            ;; Insert at position
+                            (coterm--t-open-space
+                             proc-filt process
+                             where 0 lines 0)))
                          (?M ;; \E[M - delete lines (terminfo: dl, dl1)
-                          ;; Insert at bottom
-                          (coterm--t-open-space
-                           proc-filt process coterm--t-height 0
-                           (car-or-1) 0)
-                          ;; Remove at position
-                          (coterm--t-delete-region
-                           coterm--t-row 0
-                           (+ coterm--t-row (car-or-1)) 0))
+                          (let ((lines
+                                 (min (car-or-1)
+                                      (max 0 (- coterm--t-scroll-end coterm--t-row)))))
+                            ;; Insert at bottom
+                            (coterm--t-open-space proc-filt process
+                                                  coterm--t-scroll-end 0
+                                                  lines 0)
+                            ;; Remove at position
+                            (coterm--t-delete-region
+                             coterm--t-row 0
+                             (+ coterm--t-row lines) 0)))
                          (?P ;; \E[P - delete chars (terminfo: dch, dch1)
                           (coterm--t-delete-region
                            coterm--t-row coterm--t-col
                            coterm--t-row (+ coterm--t-col (car-or-1))))
                          (?@ ;; \E[@ - insert spaces (terminfo: ich)
-                          (let ((width (car-or-1)))
+                          (let ((width (min (car-or-1) (- coterm--t-width
+                                                          coterm--t-col -1))))
                             (coterm--t-open-space
                              proc-filt process
                              coterm--t-row coterm--t-col
@@ -429,7 +487,15 @@ initialize it sensibly."
                            ;; (terminfo: u6)
                            (format "\e[%s;%sR"
                                    (1+ coterm--t-row)
-                                   (1+ coterm--t-col))))))))))))
+                                   (1+ coterm--t-col))))
+                         (?r ;; \E[r - Set scrolling region (terminfo: csr)
+                          (let ((beg (1- (car-or-1)))
+                                (end (max 1 (cadr-or-0))))
+                            (setq coterm--t-scroll-beg
+                                  (if (< beg coterm--t-height) beg 0))
+                            (setq coterm--t-scroll-end
+                                  (if (<= 1 end coterm--t-height)
+                                      end coterm--t-height))))))))))))
 
             (cond
              ((setq match (string-match coterm--t-control-seq-prefix-regexp
@@ -476,6 +542,9 @@ initialize it sensibly."
              (process (get-buffer-process (current-buffer))))
     (setq coterm--t-height (floor (window-screen-lines)))
     (setq coterm--t-width (window-max-chars-per-line))
+    (setq coterm--t-scroll-beg 0)
+    (setq coterm--t-scroll-end coterm--t-height)
+
     (setq-local comint-inhibit-carriage-motion t)
 
     (add-function :filter-return
