@@ -47,7 +47,8 @@ In sync with variables `coterm--t-home-marker',
 
 (defun coterm--t-reset-size (height width)
   (setq coterm--t-height height)
-  (setq coterm--t-width width))
+  (setq coterm--t-width width)
+  (setq coterm--t-col (max coterm--t-col (1- coterm--t-width))))
 
 (defun coterm--t-point (row col)
   "Return position that approximates ROW and COL."
