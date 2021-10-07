@@ -258,7 +258,9 @@ initialize it sensibly."
          (dirty ()
            `(setq coterm--t-pmark-in-sync nil))
          (pass-through ()
-           `(ignore)))
+           `(ignore))
+         (car-or-1 ()
+           `(max 1 (car ctl-params))))
 
       (if (not (and string
                     (setq buf (process-buffer process))
@@ -343,19 +345,19 @@ initialize it sensibly."
                                 (1- (max 1 (min (or (nth 1 ctl-params) 0) coterm-t-width))))
                           (dirty))
                          (?A ;; cursor up (terminfo: cuu, cuu1)
-                          (cl-decf coterm--t-row (car ctl-params))
+                          (cl-decf coterm--t-row (car-or-1))
                           (setq coterm--t-row (max coterm--t-row 0))
                           (dirty))
                          (?B ;; cursor down (terminfo: cud)
-                          (cl-incf coterm--t-row (car ctl-params))
+                          (cl-incf coterm--t-row (car-or-1))
                           (setq coterm--t-row (min coterm--t-row (1- coterm-t-height)))
                           (dirty))
                          (?C ;; \E[C - cursor right (terminfo: cuf, cuf1)
-                          (cl-incf coterm--t-col (car ctl-params))
+                          (cl-incf coterm--t-col (car-or-1))
                           (setq coterm--t-col (min coterm--t-col (1- coterm-t-width)))
                           (dirty))
                          (?D ;; \E[D - cursor left (terminfo: cub)
-                          (cl-decf coterm--t-col (car ctl-params))
+                          (cl-decf coterm--t-col (car-or-1))
                           (setq coterm--t-col (max coterm--t-col 0))
                           (dirty))
                          ;; \E[J - clear to end of screen (terminfo: ed, clear)
@@ -378,28 +380,27 @@ initialize it sensibly."
                          (?L ;; \E[L - insert lines (terminfo: il, il1)
                           ;; Remove from bottom
                           (coterm--t-delete-region
-                           (- coterm-t-height (car ctl-params)) 0
+                           (- coterm-t-height (car-or-1)) 0
                            coterm-t-height 0)
                           ;; Insert at position
                           (coterm--t-open-space
                            proc-filt process coterm--t-row 0
-                           (car ctl-params) 0))
+                           (car-or-1) 0))
                          (?M ;; \E[M - delete lines (terminfo: dl, dl1)
                           ;; Insert at bottom
                           (coterm--t-open-space
                            proc-filt process coterm-t-height 0
-                           (car ctl-params) 0)
+                           (car-or-1) 0)
                           ;; Remove at position
                           (coterm--t-delete-region
                            coterm--t-row 0
-                           (+ coterm--t-row (car ctl-params)) 0))
+                           (+ coterm--t-row (car-or-1)) 0))
                          (?P ;; \E[P - delete chars (terminfo: dch, dch1)
                           (coterm--t-delete-region
                            coterm--t-row coterm--t-col
-                           coterm--t-row (+ coterm--t-col
-                                            (max 1 (car ctl-params)))))
+                           coterm--t-row (+ coterm--t-col (car-or-1))))
                          (?@ ;; \E[@ - insert spaces (terminfo: ich)
-                          (let ((width (max 1 (car ctl-params))))
+                          (let ((width (car-or-1)))
                             (coterm--t-open-space
                              proc-filt process
                              coterm--t-row coterm--t-col
