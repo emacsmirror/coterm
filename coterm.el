@@ -321,7 +321,7 @@ initialize it sensibly."
                          (setq coterm--t-col (car cursor))
                          (setq cursor (cdr cursor))
                          (when (car cursor)
-                           (setq coterm--t-row (caar cursor)))))
+                           (setq ansi-color-context-region (caar cursor)))))
                    (?c (ins) ;; \Ec - Reset (terminfo: rs1)
                        (erase-buffer)
                        (when (boundp 'ansi-color-context-region)
