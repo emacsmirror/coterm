@@ -88,7 +88,11 @@ In sync with variables `coterm--t-home-marker',
        proc-filt process
        (concat (make-string height ?\n)
                (unless (eolp)
-                 (make-string (+ width (if (= row 0) 0 col)) ?\s))))
+                 (make-string (+ width (if (= height 0) 0 col)) ?\s))))
+      ;; Delete chars that are after the width of the terminal
+      (goto-char (process-mark process))
+      (move-to-column coterm-t-width)
+      (delete-region (point) (progn (forward-line 1) (1- (point))))
       (setq coterm--t-pmark-in-sync nil))))
 
 (defun coterm--t-normalize-home-offset ()
@@ -391,7 +395,20 @@ initialize it sensibly."
                           ;; Remove at position
                           (coterm--t-delete-region
                            coterm--t-row 0
-                           (+ coterm--t-row (car ctl-params)) 0))))))))))
+                           (+ coterm--t-row (car ctl-params)) 0))
+                         (?P ;; \E[P - delete chars (terminfo: dch, dch1)
+                          (coterm--t-delete-region
+                           coterm--t-row coterm--t-col
+                           coterm--t-row (+ coterm--t-col
+                                            (max 1 (car ctl-params)))))
+                         (?@ ;; \E[@ - insert spaces (terminfo: ich)
+                          (let ((width (max 1 (car ctl-params))))
+                            (coterm--t-open-space
+                             proc-filt process
+                             coterm--t-row coterm--t-col
+                             0 width)
+                            (cl-incf coterm--t-col width)
+                            (dirty)))))))))))
 
             (cond
              ((setq match (string-match coterm-t-control-seq-prefix-regexp
