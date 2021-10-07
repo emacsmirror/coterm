@@ -334,45 +334,42 @@ initialize it sensibly."
                       (char
                        (setq ctl-params (mapcar #'string-to-number
                                                 (split-string ctl-params ";")))
+                       (ins)
                        (pcase char
-                         (?H (ins) ;; cursor motion (terminfo: cup,home)
-                             (setq coterm--t-row
-                                   (1- (max 1 (min (or (nth 0 ctl-params) 0) coterm-t-height))))
-                             (setq coterm--t-col
-                                   (1- (max 1 (min (or (nth 1 ctl-params) 0) coterm-t-width))))
-                             (dirty))
-                         (?A (ins) ;; cursor up (terminfo: cuu, cuu1)
-                             (cl-decf coterm--t-row (car ctl-params))
-                             (setq coterm--t-row (max coterm--t-row 0))
-                             (dirty))
-                         (?B (ins) ;; cursor down (terminfo: cud)
-                             (cl-incf coterm--t-row (car ctl-params))
-                             (setq coterm--t-row (min coterm--t-row (1- coterm-t-height)))
-                             (dirty))
-                         (?C (ins) ;; \E[C - cursor right (terminfo: cuf, cuf1)
-                             (cl-incf coterm--t-col (car ctl-params))
-                             (setq coterm--t-col (min coterm--t-col (1- coterm-t-width)))
-                             (dirty))
-                         (?D (ins) ;; \E[D - cursor left (terminfo: cub)
-                             (cl-decf coterm--t-col (car ctl-params))
-                             (setq coterm--t-col (max coterm--t-col 0))
-                             (dirty))
+                         (?H ;; cursor motion (terminfo: cup,home)
+                          (setq coterm--t-row
+                                (1- (max 1 (min (or (nth 0 ctl-params) 0) coterm-t-height))))
+                          (setq coterm--t-col
+                                (1- (max 1 (min (or (nth 1 ctl-params) 0) coterm-t-width))))
+                          (dirty))
+                         (?A ;; cursor up (terminfo: cuu, cuu1)
+                          (cl-decf coterm--t-row (car ctl-params))
+                          (setq coterm--t-row (max coterm--t-row 0))
+                          (dirty))
+                         (?B ;; cursor down (terminfo: cud)
+                          (cl-incf coterm--t-row (car ctl-params))
+                          (setq coterm--t-row (min coterm--t-row (1- coterm-t-height)))
+                          (dirty))
+                         (?C ;; \E[C - cursor right (terminfo: cuf, cuf1)
+                          (cl-incf coterm--t-col (car ctl-params))
+                          (setq coterm--t-col (min coterm--t-col (1- coterm-t-width)))
+                          (dirty))
+                         (?D ;; \E[D - cursor left (terminfo: cub)
+                          (cl-decf coterm--t-col (car ctl-params))
+                          (setq coterm--t-col (max coterm--t-col 0))
+                          (dirty))
                          ;; \E[J - clear to end of screen (terminfo: ed, clear)
                          ((and ?J (guard (eq 0 (car ctl-params))))
-                          (ins)
                           (delete-region (coterm--t-point coterm--t-row coterm--t-col)
                                          (point-max))
                           (dirty))
                          ((and ?J (guard (eq 1 (car ctl-params))))
-                          (ins)
                           (coterm--t-clear-region
                            proc-filt process 0 0 coterm--t-row coterm--t-col))
                          (?J
-                          (ins)
                           (delete-region (coterm--t-point 0 0) (point-max))
                           (dirty))
                          (?K ;; \E[K - clear to end of line (terminfo: el, el1)
-                          (ins)
                           (coterm--t-clear-region
                            proc-filt process
                            coterm--t-row coterm--t-col
