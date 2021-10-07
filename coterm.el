@@ -405,7 +405,19 @@ initialize it sensibly."
                              coterm--t-row coterm--t-col
                              0 width)
                             (cl-incf coterm--t-col width)
-                            (dirty)))))))))))
+                            (dirty)))
+                         (?h ;; \E[?h - DEC Private Mode Set
+                          (pcase (car ctl-params)
+                            ;; (49 ;; (terminfo: smcup)
+                            ;;  (coterm-t-switch-to-alternate-sub-buffer t))
+                            (4 ;; (terminfo: smir)
+                             (setq coterm-t-insert-mode t))))
+                         (?l ;; \E[?l - DEC Private Mode Reset
+                          (pcase (car ctl-params)
+                            ;; (49 ;; (terminfo: rmcup)
+                            ;;  (coterm-t-switch-to-alternate-sub-buffer nil))
+                            (4 ;; (terminfo: rmir)
+                             (setq coterm-t-insert-mode nil))))))))))))
 
             (cond
              ((setq match (string-match coterm-t-control-seq-prefix-regexp
