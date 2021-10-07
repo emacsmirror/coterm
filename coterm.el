@@ -417,7 +417,14 @@ initialize it sensibly."
                             ;; (49 ;; (terminfo: rmcup)
                             ;;  (coterm-t-switch-to-alternate-sub-buffer nil))
                             (4 ;; (terminfo: rmir)
-                             (setq coterm-t-insert-mode nil))))))))))))
+                             (setq coterm-t-insert-mode nil))))
+                         (?n ;; \E[6n - Report cursor position (terminfo: u7)
+                          (process-send-string
+                           process
+                           ;; (terminfo: u6)
+                           (format "\e[%s;%sR"
+                                   (1+ coterm--t-row)
+                                   (1+ coterm--t-col))))))))))))
 
             (cond
              ((setq match (string-match coterm-t-control-seq-prefix-regexp
