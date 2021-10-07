@@ -296,6 +296,7 @@ initialize it sensibly."
                      (dirty))
                 (?\b (ins) ;; (terminfo: cub1)
                      (cl-decf coterm--t-col 1)
+                     (setq coterm--t-col (max coterm--t-col 0))
                      (dirty))
                 (?\C-g (ins) ;; (terminfo: bel)
                        (beep t))
@@ -316,9 +317,9 @@ initialize it sensibly."
                                      (list ansi-color-context-region)))))
                    (?8 (ins) ;; Restore cursor (terminfo: rc)
                        (when-let ((cursor coterm--t-saved-cursor))
-                         (setq coterm--t-row (car cursor))
+                         (setq coterm--t-row (max (car cursor) (1- coterm-t-height)))
                          (setq cursor (cdr cursor))
-                         (setq coterm--t-col (car cursor))
+                         (setq coterm--t-col (max (car cursor) (1- coterm-t-width)))
                          (setq cursor (cdr cursor))
                          (when (car cursor)
                            (setq ansi-color-context-region (caar cursor)))))
@@ -406,6 +407,8 @@ initialize it sensibly."
                              coterm--t-row coterm--t-col
                              0 width)
                             (cl-incf coterm--t-col width)
+                            (setq coterm--t-col (min coterm--t-col
+                                                     (1- coterm-t-width)))
                             (dirty)))
                          (?h ;; \E[?h - DEC Private Mode Set
                           (pcase (car ctl-params)
