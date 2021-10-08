@@ -103,24 +103,41 @@ which case `point-max' is assumed"
         (setq row row2 col col2
               h (- row1 row2)))
       (delete-region p1 p2)
-      (coterm--t-open-space proc-filt process row col h (abs (- col2 col1)))
+      (coterm--t-open-space-at-point
+       proc-filt process
+       h (cond ((> row2 row1) col2)
+               ((< row2 row1) col1)
+               (t (abs (- col2 col1)))))
       (setq coterm--t-pmark-in-sync nil))))
 
+(defun coterm--t-open-space-at-point (proc-filt process newlines spaces)
+  "Insert NEWLINES newlines and SPECES spaces at point.
+Insert them using PROC-FILT and PROCESS.  Afterwards, remove
+characters that were moved after the column specified by
+`coterm--t-width'."
+  (unless (eobp)
+    (set-marker (process-mark process) (point))
+    (funcall
+     proc-filt process
+     (concat (make-string newlines ?\n)
+             (unless (eolp)
+               (make-string spaces ?\s))))
+    ;; Delete chars that are after the width of the terminal
+    (goto-char (process-mark process))
+    (move-to-column coterm--t-width)
+    (delete-region (point) (progn (forward-line 1) (1- (point))))
+    (setq coterm--t-pmark-in-sync nil)))
+
 (defun coterm--t-open-space (proc-filt process row col height width)
+  "Open spce at position ROW and COL, preserving point.
+Use PROC-FILT and PROCESS to insert spaces and newlines.
+Whitespace is inserted such that the character at position ROW
+and COL is moved by HEIGHT rows down and WIDTH cols to the
+right."
   (save-excursion
     (coterm--t-goto row col)
-    (unless (eobp)
-      (set-marker (process-mark process) (point))
-      (funcall
-       proc-filt process
-       (concat (make-string height ?\n)
-               (unless (eolp)
-                 (make-string (+ width (if (= height 0) 0 col)) ?\s))))
-      ;; Delete chars that are after the width of the terminal
-      (goto-char (process-mark process))
-      (move-to-column coterm--t-width)
-      (delete-region (point) (progn (forward-line 1) (1- (point))))
-      (setq coterm--t-pmark-in-sync nil))))
+    (coterm--t-open-space-at-point proc-filt process height
+                                   (+ width (if (= height 0) 0 col)))))
 
 (defun coterm--t-normalize-home-offset ()
   (save-excursion
