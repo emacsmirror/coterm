@@ -2,7 +2,7 @@
 
 ;;; Terminal emulation
 
-;; Removed \t, \032 (\C-z), \eAnSiT
+;; Differences from `term-control-seq-regexp': Removed \t, \032 (\C-z), \eAnSiT
 (defconst coterm--t-control-seq-regexp
   (concat
    ;; A control character,
@@ -174,7 +174,6 @@ insertion of empty lines."
     (coterm--t-normalize-home-offset)))
   (setq coterm--t-pmark-in-sync nil))
 
-;; Moves pmark, inserts
 (defun coterm--t-adjust-pmark (proc-filt process)
   "Set PROCESS's mark to `coterm--t-row' and `coterm--t-col'.
 If necessary, this function inserts newlines and spaces using
@@ -201,7 +200,6 @@ non-whitespace text."
     (setq coterm--t-pmark-in-sync t)
     (coterm--t-normalize-home-offset)))
 
-;; Moves pmark
 (defun coterm--t-approximate-pmark (pmark)
   "Sets PMARK to point close to `coterm--t-row' and col.
 Don't modify buffer.  If `coterm--t-row' and `coterm--t-col'
@@ -214,7 +212,6 @@ return t."
               (prog1 (coterm--t-goto coterm--t-row coterm--t-col)
                 (set-marker pmark (point)))))))
 
-;; Moves pmark and inserts
 (defun coterm--t-insert (proc-filt process str newlines)
   "Insert STR using PROC-FILT and PROCESS.
 Synchronise PROCESS's mark beforehand and insert at its position.
@@ -247,7 +244,6 @@ buffer and the scrolling region must cover the whole screen."
             (setq coterm--t-row (1- coterm--t-height)))))
       (setq coterm--t-col (min column (1- coterm--t-width))))))
 
-;; Depends on pmark
 (defun coterm--t-maybe-adjust-from-pmark (pos)
   "If `coterm--t-row' and col are nil, point them to POS.
 `coterm--t-home-marker' may also be nil, in which case,
