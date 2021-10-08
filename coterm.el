@@ -166,6 +166,7 @@ insertion of empty lines."
    ((< 0 coterm--t-row)
     (cl-decf coterm--t-row))
    (t
+    (coterm--t-delete-region (1- coterm--t-scroll-end) 0)
     (cl-decf coterm--t-home-offset)
     (coterm--t-normalize-home-offset)))
   (setq coterm--t-pmark-in-sync nil))
