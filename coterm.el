@@ -426,27 +426,31 @@ initialize it sensibly."
                               coterm--t-row coterm--t-col
                               coterm--t-row coterm--t-width))
                          (?L ;; \E[L - insert lines (terminfo: il, il1)
-                          (let*
-                              ((where (max coterm--t-row coterm--t-scroll-beg))
-                               (lines (+ (- coterm--t-row where) (car-or-1))))
-                            ;; Remove from bottom
-                            (coterm--t-delete-region
-                             (- coterm--t-scroll-end lines) 0
-                             coterm--t-scroll-end 0)
-                            ;; Insert at position
-                            (coterm--t-goto where 0)
-                            (coterm--t-open-space proc-filt process lines 0)))
+                          (when (<= coterm--t-scroll-beg coterm--t-row
+                                    (1- coterm--t-scroll-end))
+                            (let ((lines
+                                   (min (- coterm--t-scroll-end coterm--t-row)
+                                        (car-or-1))))
+                              ;; Remove from bottom
+                              (coterm--t-delete-region
+                               (- coterm--t-scroll-end lines) 0
+                               coterm--t-scroll-end 0)
+                              ;; Insert at position
+                              (coterm--t-goto coterm--t-row 0)
+                              (coterm--t-open-space proc-filt process lines 0))))
                          (?M ;; \E[M - delete lines (terminfo: dl, dl1)
-                          (let ((lines
-                                 (min (car-or-1)
-                                      (max 0 (- coterm--t-scroll-end coterm--t-row)))))
-                            ;; Insert at bottom
-                            (coterm--t-goto coterm--t-scroll-end 0)
-                            (coterm--t-open-space proc-filt process lines 0)
-                            ;; Remove at position
-                            (coterm--t-delete-region
-                             coterm--t-row 0
-                             (+ coterm--t-row lines) 0)))
+                          (when (<= coterm--t-scroll-beg coterm--t-row
+                                    (1- coterm--t-scroll-end))
+                            (let ((lines
+                                   (min (- coterm--t-scroll-end coterm--t-row)
+                                        (car-or-1))))
+                              ;; Insert at bottom
+                              (coterm--t-goto coterm--t-scroll-end 0)
+                              (coterm--t-open-space proc-filt process lines 0)
+                              ;; Remove at position
+                              (coterm--t-delete-region
+                               coterm--t-row 0
+                               (+ coterm--t-row lines) 0))))
                          (?P ;; \E[P - delete chars (terminfo: dch, dch1)
                           (coterm--t-delete-region
                            coterm--t-row coterm--t-col
