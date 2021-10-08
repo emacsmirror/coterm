@@ -506,7 +506,8 @@ initialize it sensibly."
                                         string ctl-end))
               (while (setq match (string-match coterm--t-control-seq-prefix-regexp
                                                string (1+ match)))
-                (setq ctl-end (1+ match)))
+                (setq ctl-end match))
+              (setq match ctl-end)
               (ins)
               (setq coterm--t-unhandled-fragment (substring string last-match-end)))
              ((null last-match-end)
