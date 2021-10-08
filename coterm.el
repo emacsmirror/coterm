@@ -62,26 +62,40 @@ In sync with variables `coterm--t-home-marker',
       (setq coterm--t-row (1- coterm--t-height))
       (coterm--t-normalize-home-offset))))
 
-(defun coterm--t-point (row col)
-  "Return position that approximates ROW and COL."
-  (save-excursion
-    (goto-char coterm--t-home-marker)
-    (and
-     (zerop (forward-line
-             (+ coterm--t-home-offset row)))
-     (not (eobp))
-     (move-to-column col))
-    (point)))
+(defun coterm--t-goto (row col)
+  "Move point to a position that approximates ROW and COL.
+Return non-nil if the position was actually reached."
+  (goto-char coterm--t-home-marker)
+  (and
+   (zerop (forward-line
+           (+ coterm--t-home-offset row)))
+   (not (eobp))
+   (<= col (move-to-column col))))
 
-(defun coterm--t-delete-region (row1 col1 row2 col2)
-  (delete-region (coterm--t-point row1 col1)
-                 (coterm--t-point row2 col2))
+(defun coterm--t-delete-region (row1 col1 &optional row2 col2)
+  "Delete text betewwn two positions.
+Deletes resulting trailing whitespace as well.  ROW1, COL1, ROW2
+and COL2 specify the two positions.  ROW2 and COL2 can be nil, in
+which case `point-max' is assumed"
+  (save-excursion
+    (coterm--t-goto row1 col1)
+    (let ((opoint (point)))
+      (delete-region opoint
+                     (if row2
+                         (progn (coterm--t-goto row2 col2) (point))
+                       (point-max)))
+      (when (eolp)
+        (skip-chars-backward " ")
+        (delete-region opoint (setq opoint (point))))
+      (when (eobp)
+        (skip-chars-backward "\n")
+        (delete-region (point) opoint))))
   (setq coterm--t-pmark-in-sync nil))
 
 (defun coterm--t-clear-region (proc-filt process row1 col1 row2 col2)
   (save-excursion
-    (let ((p1 (coterm--t-point row1 col1))
-          (p2 (coterm--t-point row2 col2))
+    (let ((p1 (progn (coterm--t-goto row1 col1) (point)))
+          (p2 (progn (coterm--t-goto row2 col2) (point)))
           row col h)
       (if (> p2 p1)
           (setq row row1 col col1
@@ -94,7 +108,7 @@ In sync with variables `coterm--t-home-marker',
 
 (defun coterm--t-open-space (proc-filt process row col height width)
   (save-excursion
-    (goto-char (coterm--t-point row col))
+    (coterm--t-goto row col)
     (unless (eobp)
       (set-marker (process-mark process) (point))
       (funcall
@@ -206,15 +220,9 @@ point to an unreachable location, locate PMARK as close to it as
 possible and return nil.  Otherwise, locate PMARK exactly and
 return t."
   (or coterm--t-pmark-in-sync
-      (save-excursion
-        (goto-char coterm--t-home-marker)
-        (setq coterm--t-pmark-in-sync
-              (prog1
-                  (and
-                   (zerop (forward-line
-                           (+ coterm--t-home-offset coterm--t-row)))
-                   (bolp)
-                   (<= coterm--t-col (move-to-column coterm--t-col)))
+      (setq coterm--t-pmark-in-sync
+            (save-excursion
+              (prog1 (coterm--t-goto coterm--t-row coterm--t-col)
                 (set-marker pmark (point)))))))
 
 ;; Moves pmark and inserts
@@ -386,7 +394,7 @@ initialize it sensibly."
                    (?\[
                     (pcase (aref string (1- ctl-end))
                       (?m    ; Let `comint-output-filter-functions' handle this
-                       (pass-through))
+                       (ins))
                       (char
                        (setq ctl-params (mapcar #'string-to-number
                                                 (split-string ctl-params ";")))
@@ -416,15 +424,14 @@ initialize it sensibly."
                           (dirty))
                          ;; \E[J - clear to end of screen (terminfo: ed, clear)
                          ((and ?J (guard (eq 0 (car ctl-params))))
-                          (delete-region
-                           (coterm--t-point coterm--t-row coterm--t-col)
-                           (point-max))
+                          (coterm--t-delete-region coterm--t-row coterm--t-col)
                           (dirty))
                          ((and ?J (guard (eq 1 (car ctl-params))))
                           (coterm--t-clear-region
                            proc-filt process 0 0 coterm--t-row coterm--t-col))
                          (?J
-                          (delete-region (coterm--t-point 0 0) (point-max))
+                          ;; TODO
+                          (coterm--t-delete-region 0 0)
                           (dirty))
                          (?K ;; \E[K - clear to end of line (terminfo: el, el1)
                           (coterm--t-clear-region
