@@ -72,6 +72,14 @@ Return non-nil if the position was actually reached."
    (not (eobp))
    (<= col (move-to-column col))))
 
+(defun coterm--t-apply-proc-filt (proc-filt process str)
+  "Insert STR using PROC-FILT and PROCESS.
+Basically, call PROC-FILT with the arguments PROCESS and STR, but
+adjusting `ansi-color-context-region' beforehand."
+  (when-let ((context ansi-color-context-region))
+    (set-marker (cadr context) (process-mark process)))
+  (funcall proc-filt process str))
+
 (defun coterm--t-delete-region (row1 col1 &optional row2 col2)
   "Delete text between two positions.
 Deletes resulting trailing whitespace as well.  ROW1, COL1, ROW2
@@ -100,7 +108,7 @@ characters that were moved after the column specified by
 `coterm--t-width'."
   (unless (eobp)
     (set-marker (process-mark process) (point))
-    (funcall
+    (coterm--t-apply-proc-filt
      proc-filt process
      (concat (make-string newlines ?\n)
              (unless (eolp)
@@ -190,13 +198,14 @@ non-whitespace text."
             (cl-incf newlines))
           (unless (zerop newlines)
             (set-marker pmark (point))
-            (funcall proc-filt process (make-string newlines ?\n))))
+            (coterm--t-apply-proc-filt
+             proc-filt process (make-string newlines ?\n))))
 
         (let ((col (move-to-column coterm--t-col)))
           (set-marker pmark (point))
           (when (< col coterm--t-col)
-            (funcall proc-filt process
-                     (make-string (- coterm--t-col col) ?\s))))))
+            (coterm--t-apply-proc-filt
+             proc-filt process (make-string (- coterm--t-col col) ?\s))))))
     (setq coterm--t-pmark-in-sync t)
     (coterm--t-normalize-home-offset)))
 
@@ -219,7 +228,7 @@ NEWLINES is the number of newlines STR contains. Unless it is
 zero, insertion must happen at the end of accessible portion of
 buffer and the scrolling region must cover the whole screen."
   (coterm--t-adjust-pmark proc-filt process)
-  (funcall proc-filt process str)
+  (coterm--t-apply-proc-filt proc-filt process str)
   (save-excursion
     (goto-char (process-mark process))
     (let ((column (current-column)))
@@ -378,8 +387,8 @@ initialize it sensibly."
                        (setq coterm--t-insert-mode nil))
                    (?\[
                     (pcase (aref string (1- ctl-end))
-                      (?m    ; Let `comint-output-filter-functions' handle this
-                       (ins))
+                      (?m ; Let `comint-output-filter-functions' handle this
+                       (pass-through))
                       (char
                        (setq ctl-params (mapcar #'string-to-number
                                                 (split-string ctl-params ";")))
