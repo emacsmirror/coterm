@@ -93,7 +93,7 @@ region."
       (skip-chars-backward "\n") (delete-region (point) opoint)))
   (setq coterm--t-pmark-in-sync nil))
 
-(defun coterm--t-open-space-at-point (proc-filt process newlines spaces)
+(defun coterm--t-open-space (proc-filt process newlines spaces)
   "Insert NEWLINES newlines and SPACES spaces at point.
 Insert them using PROC-FILT and PROCESS.  Afterwards, remove
 characters that were moved after the column specified by
@@ -137,7 +137,7 @@ insertion of empty lines."
     (coterm--t-delete-region coterm--t-scroll-beg 0
                              (1+ coterm--t-scroll-beg) 0)
     (coterm--t-goto coterm--t-row 0)
-    (coterm--t-open-space-at-point proc-filt process 1 0))
+    (coterm--t-open-space proc-filt process 1 0))
    ((and (= coterm--t-row (1- coterm--t-height))
          (coterm--t-scroll-by-deletion-p))
     ;; Behaviour of xterm
@@ -161,7 +161,7 @@ insertion of empty lines."
     (coterm--t-delete-region (1- coterm--t-scroll-end) 0
                              coterm--t-scroll-end 0)
     (coterm--t-goto coterm--t-row 0)
-    (coterm--t-open-space-at-point proc-filt process 1 0))
+    (coterm--t-open-space proc-filt process 1 0))
    ((and (= coterm--t-row 0)
          (coterm--t-scroll-by-deletion-p))
     ;; Behaviour of xterm
@@ -418,15 +418,14 @@ initialize it sensibly."
                          ((and ?J (guard (eq 1 (car ctl-params))))
                           (coterm--t-delete-region 0 0 coterm--t-row
                                                    coterm--t-col)
-                          (coterm--t-open-space-at-point
+                          (coterm--t-open-space
                            proc-filt process coterm--t-row coterm--t-col))
                          (?J (coterm--t-delete-region 0 0))
                          ;; \E[K - clear to end of line (terminfo: el, el1)
                          ((and ?K (guard (eq 1 (car ctl-params))))
                           (coterm--t-delete-region coterm--t-row 0
                                                    coterm--t-row coterm--t-col)
-                          (coterm--t-open-space-at-point proc-filt process
-                                                         0 coterm--t-col))
+                          (coterm--t-open-space proc-filt process 0 coterm--t-col))
                          (?K (coterm--t-delete-region
                               coterm--t-row coterm--t-col
                               coterm--t-row coterm--t-width))
@@ -440,16 +439,14 @@ initialize it sensibly."
                              coterm--t-scroll-end 0)
                             ;; Insert at position
                             (coterm--t-goto where 0)
-                            (coterm--t-open-space-at-point
-                             proc-filt process lines 0)))
+                            (coterm--t-open-space proc-filt process lines 0)))
                          (?M ;; \E[M - delete lines (terminfo: dl, dl1)
                           (let ((lines
                                  (min (car-or-1)
                                       (max 0 (- coterm--t-scroll-end coterm--t-row)))))
                             ;; Insert at bottom
                             (coterm--t-goto coterm--t-scroll-end 0)
-                            (coterm--t-open-space-at-point proc-filt process
-                                                           lines 0)
+                            (coterm--t-open-space proc-filt process lines 0)
                             ;; Remove at position
                             (coterm--t-delete-region
                              coterm--t-row 0
@@ -462,8 +459,7 @@ initialize it sensibly."
                           (let ((width (min (car-or-1) (- coterm--t-width
                                                           coterm--t-col -1))))
                             (coterm--t-goto coterm--t-row coterm--t-col)
-                            (coterm--t-open-space-at-point proc-filt process
-                                                           0 width)
+                            (coterm--t-open-space proc-filt process 0 width)
                             (cl-incf coterm--t-col width)
                             (setq coterm--t-col (min coterm--t-col
                                                      (1- coterm--t-width)))
