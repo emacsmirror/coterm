@@ -318,6 +318,7 @@ initialize it sensibly."
           (setq restore-point (if (= (point) pmark) pmark (point-marker)))
           (coterm--t-maybe-adjust-from-pmark pmark)
           (save-restriction
+            (widen)
             (unless (text-property-any
                      pmark (point-max) 'field 'output)
               ;; If pmark is at the end of buffer, not counting user input,
@@ -338,7 +339,8 @@ initialize it sensibly."
                  (cl-incf will-insert-newlines))
                 (?\n (ins) ;; (terminfo: cud1, ind)
                      (coterm--t-down-line proc-filt process)
-                     (setq coterm--t-col 0))
+                     (setq coterm--t-col 0)
+                     (dirty))
                 (?\r (ins) ;; (terminfo: cr)
                      (setq coterm--t-col 0)
                      (dirty))
@@ -359,23 +361,22 @@ initialize it sensibly."
                        (setq coterm--t-saved-cursor
                              (list coterm--t-row
                                    coterm--t-col
-                                   (when (boundp 'ansi-color-context-region)
-                                     (cons ansi-color-context-region
-                                           ansi-color-context)))))
+                                   ansi-color-context-region
+                                   ansi-color-context)))
                    (?8 (ins) ;; Restore cursor (terminfo: rc)
                        (when-let ((cursor coterm--t-saved-cursor))
                          (setq coterm--t-row (max (car cursor) (1- coterm--t-height)))
                          (setq cursor (cdr cursor))
                          (setq coterm--t-col (max (car cursor) (1- coterm--t-width)))
                          (setq cursor (cdr cursor))
-                         (when (car cursor)
-                           (setq ansi-color-context-region (caar cursor))
-                           (setq ansi-color-context (cdar cursor)))))
+                         (setq ansi-color-context-region (car cursor))
+                         (setq ansi-color-context (cadr cursor))
+                         (dirty)))
                    (?c (ins) ;; \Ec - Reset (terminfo: rs1)
                        (erase-buffer)
-                       (when (boundp 'ansi-color-context-region)
-                         (setq ansi-color-context-region nil)
-                         (setq ansi-color-context nil))
+                       (setq ansi-color-context-region nil)
+                       (setq ansi-color-context nil)
+                       (setq coterm--t-home-offset 0)
                        (setq coterm--t-row 0)
                        (setq coterm--t-col 0)
                        (setq coterm--t-scroll-beg 0)
@@ -505,9 +506,7 @@ initialize it sensibly."
                 (setq ctl-end (1+ match)))
               (ins)
               (setq coterm--t-unhandled-fragment (substring string last-match-end)))
-             ((and (null last-match-end)
-                   ;; TODO Smo na koncu, razen vhoda
-                   )
+             ((null last-match-end)
               ;; Optimization, no substring means no string copying
               (coterm--t-insert proc-filt process string will-insert-newlines))
              (t
