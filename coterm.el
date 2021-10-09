@@ -2,17 +2,17 @@
 
 ;;; Terminal emulation
 
-;; Differences from `term-control-seq-regexp':
-;; Removed: \t, \032 (\C-z)
-;; Added: OSC sequence \e] ... ; ... \e\\ (or \a)
 (defconst coterm--t-control-seq-regexp
+  ;; Differences from `term-control-seq-regexp':
+  ;; Removed: \t, \032 (\C-z)
+  ;; Added: OSC sequence \e] ... ; ... \e\\ (or \a)
   (concat
    ;; A control character,
    "\\(?:[\n\000\007\b\016\017]\\|\r\n?\\|"
    ;; a C1 escape coded character (see [ECMA-48] section 5.3 "Elements
    ;; of the C1 set"),
    "\e\\(?:[DM78c]\\|"
-   ;; Emacs specific control sequences from term.el.  In coterm, we simply
+   ;; Emacs specific control sequence from term.el.  In coterm, we simply
    ;; ignore them.
    "AnSiT[^\n]+\n\\|"
    ;; OSC seqence.  We print them normally to let
@@ -20,7 +20,7 @@
    "][0-9A-Za-z]*;.*?\\(?:\a\\|\e\\\\\\)\\|"
    ;; or an escape sequence (section 5.4 "Control Sequences"),
    "\\[\\([\x30-\x3F]*\\)[\x20-\x2F]*[\x40-\x7E]\\)\\)")
-  "Regexp matching control sequences handled by term.el.")
+  "Regexp matching control sequences handled by coterm.")
 
 (defconst coterm--t-control-seq-prefix-regexp "\e")
 
@@ -343,10 +343,10 @@ If `coterm--t-home-marker' is nil, initialize it sensibly."
                  ;; A match string of length two and beginning with \r means
                  ;; that we have matched "\r\n".  In this case, and if we are
                  ;; at eob, we pass-through to avoid an unnecessary call to
-                 ;; `substring' which is expensive.  In the most common when
-                 ;; the process just outputs text at eob without any control
-                 ;; sequences, we will end up inserting the whole string
-                 ;; without a single call to `substring'.
+                 ;; `substring' which is expensive.  In the most common case
+                 ;; when the process just outputs text at eob without any
+                 ;; control sequences, we will end up inserting the whole
+                 ;; string without a single call to `substring'.
                  (if (and coterm--t-pmark-in-sync
                           (= pmark (point-max))
                           (not (coterm--t-scroll-by-deletion-p)))
@@ -522,7 +522,7 @@ If `coterm--t-home-marker' is nil, initialize it sensibly."
               (ins)
               (setq coterm--t-unhandled-fragment (substring string match)))
              ((null last-match-end)
-              ;; Optimization, no substring means no string copying
+              ;; Optimization: no substring means no string copying
               (coterm--t-insert proc-filt process string will-insert-newlines))
              (t
               (ins)))
@@ -541,8 +541,10 @@ If `coterm--t-home-marker' is nil, initialize it sensibly."
 
 ;;; Mode functions and configuration
 
-(defcustom coterm-term-name term-term-name
-  "Name to use for TERM.")
+(defcustom coterm-term-name "eterm-color"
+  "Name to use for TERM."
+  :group 'comint
+  :type 'string)
 
 (defun coterm--comint-strip-CR (_)
   "Remove all \\r characters from last output."
@@ -586,11 +588,20 @@ subprocesses.")
 It is called with the same arguments as `start-process' and
 should return a process.")
 
-(defcustom coterm-term-name term-term-name
-  "Name to use for TERM.")
-
-(defvar coterm-termcap-format term-termcap-format
-  "Termcap capabilities supported.")
+(defvar coterm-termcap-format
+  "%s%s:li#%d:co#%d:cl=\\E[H\\E[J:cd=\\E[J:bs:am:xn:cm=\\E[%%i%%d;%%dH\
+:nd=\\E[C:up=\\E[A:ce=\\E[K:ho=\\E[H:pt\
+:al=\\E[L:dl=\\E[M:DL=\\E[%%dM:AL=\\E[%%dL:cs=\\E[%%i%%d;%%dr:sf=^J\
+:dc=\\E[P:DC=\\E[%%dP:IC=\\E[%%d@:im=\\E[4h:ei=\\E[4l:mi:\
+:mb=\\E[5m:mh=\\E[2m:ZR=\\E[23m:ZH=\\E[3m\
+:so=\\E[7m:se=\\E[m:us=\\E[4m:ue=\\E[m:md=\\E[1m:mr=\\E[7m:me=\\E[m\
+:UP=\\E[%%dA:DO=\\E[%%dB:LE=\\E[%%dD:RI=\\E[%%dC\
+:kl=\\EOD:kd=\\EOB:kr=\\EOC:ku=\\EOA:kN=\\E[6~:kP=\\E[5~:@7=\\E[4~:kh=\\E[1~\
+:mk=\\E[8m:cb=\\E[1K:op=\\E[39;49m:Co#256:pa#32767\
+:AB=\\E[48;5;%%dm:AF=\\E[38;5;%%dm:cr=^M\
+:bl=^G:do=^J:le=^H:ta=^I:se=\\E[27m:ue=\\E[24m\
+:kb=^?:kD=^[[3~:sc=\\E7:rc=\\E8:r1=\\Ec:"
+  "Termcap capabilities supported by coterm.")
 
 (define-advice comint-exec-1 (:around (f &rest args) coterm-config)
   "Make spawning processes for comint more configurable.
@@ -614,6 +625,7 @@ process."
 (define-minor-mode coterm-mode
   "Better terminal emulation in comint processes."
   :global t
+  :group 'comint
   (if coterm-mode
 
       (progn
@@ -641,6 +653,6 @@ process."
 if [ $1 = .. ]; then shift; fi; exec \"$@\"" null-device)
                        ".." command switches))))
 
-    (remove-hook 'comint-exec-hook #'coterm-comint-exec-h)
+    (remove-hook 'comint-exec-hook #'coterm--init)
     (setq coterm-term-environment-function #'comint-term-environment)
     (setq coterm-start-process-function #'start-file-process)))
