@@ -1,4 +1,4 @@
-;; -*- lexical-binding: t; -*-
+;;; coterm.el --- Terminal emulation for comint -*- lexical-binding: t; -*-
 
 (require 'term)
 
@@ -686,3 +686,6 @@ If `coterm--t-home-marker' is nil, initialize it sensibly."
           (goto-char restore-point)
           (unless (eq restore-point pmark)
             (set-marker restore-point nil)))))))
+
+(provide 'coterm)
+;;; coterm.el ends here
