@@ -2,7 +2,9 @@
 
 ;;; Terminal emulation
 
-;; Differences from `term-control-seq-regexp': Removed \t, \032 (\C-z), \eAnSiT
+;; Differences from `term-control-seq-regexp':
+;; Removed: \t, \032 (\C-z)
+;; Added: OSC sequence \e] ... ; ... \e\\ (or \a)
 (defconst coterm--t-control-seq-regexp
   (concat
    ;; A control character,
@@ -10,6 +12,12 @@
    ;; a C1 escape coded character (see [ECMA-48] section 5.3 "Elements
    ;; of the C1 set"),
    "\e\\(?:[DM78c]\\|"
+   ;; Emacs specific control sequences from term.el.  In coterm, we simply
+   ;; ignore them.
+   "AnSiT[^\n]+\n\\|"
+   ;; OSC seqence.  We print them normally to let
+   ;; `comint-output-filter-functions' handle them
+   "][0-9A-Za-z]*;.*?\\(?:\a\\|\e\\\\\\)\\|"
    ;; or an escape sequence (section 5.4 "Control Sequences"),
    "\\[\\([\x30-\x3F]*\\)[\x20-\x2F]*[\x40-\x7E]\\)\\)")
   "Regexp matching control sequences handled by term.el.")
@@ -383,6 +391,8 @@ initialize it sensibly."
                        (setq coterm--t-scroll-beg 0)
                        (setq coterm--t-scroll-end coterm--t-height)
                        (setq coterm--t-insert-mode nil))
+                   (?\] (pass-through)) ;; OSC sequence, handled by comint
+                   (?A (ins)) ;; Ignore term.el specific \eAnSiT sequences
                    (?\[
                     (pcase (aref string (1- ctl-end))
                       (?m ; Let `comint-output-filter-functions' handle this
@@ -502,12 +512,8 @@ initialize it sensibly."
             (cond
              ((setq match (string-match coterm--t-control-seq-prefix-regexp
                                         string ctl-end))
-              (while (setq match (string-match coterm--t-control-seq-prefix-regexp
-                                               string (1+ match)))
-                (setq ctl-end match))
-              (setq match ctl-end)
               (ins)
-              (setq coterm--t-unhandled-fragment (substring string last-match-end)))
+              (setq coterm--t-unhandled-fragment (substring string match)))
              ((null last-match-end)
               ;; Optimization, no substring means no string copying
               (coterm--t-insert proc-filt process string will-insert-newlines))
