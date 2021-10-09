@@ -572,6 +572,20 @@ If `coterm--t-home-marker' is nil, initialize it sensibly."
                           (setq coterm--t-col (max (- coterm--t-col (car-or-1))
                                                    0))
                           (dirty))
+                         (?E ;; \E[E - cursor down and column 0
+                          (setq coterm--t-row (min (+ coterm--t-row (car-or-1))
+                                                   (1- coterm--t-scroll-end)))
+                          (setq coterm--t-col 0)
+                          (dirty))
+                         (?F ;; \E[F - cursor up and column 0
+                          (setq coterm--t-row (max (- coterm--t-row (car-or-1))
+                                                   coterm--t-scroll-beg))
+                          (setq coterm--t-col 0)
+                          (dirty))
+                         (?G ;; \E[G - horizontal cursor position
+                          (setq coterm--t-col (min (1- (car-or-1))
+                                                   (1- coterm--t-width)))
+                          (dirty))
                          ;; \E[J - clear to end of screen (terminfo: ed, clear)
                          ((and ?J (guard (eq 0 (car ctl-params))))
                           (coterm--t-delete-region coterm--t-row coterm--t-col)
