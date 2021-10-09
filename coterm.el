@@ -242,13 +242,17 @@ buffer and the scrolling region must cover the whole screen."
     (let ((column (current-column)))
       (if (zerop newlines)
           (if coterm--t-insert-mode
+              ;; In insert mode, delete text outside the width of the terminal
               (progn
                 (move-to-column coterm--t-width)
                 (delete-region
                  (point) (progn (forward-line 1) (1- (point)))))
-            (delete-region
-             (point)
-             (progn (move-to-column (- (* 2 column) coterm--t-col)) (point))))
+            ;; If not in insert mode, replace text
+            (when (> column coterm--t-col)
+              (delete-region
+               (point)
+               (progn (move-to-column (- (* 2 column) coterm--t-col))
+                      (point)))))
         (cl-incf coterm--t-row newlines)
         ;; We've inserted newlines, so we must scroll if necessary
         (when (>= coterm--t-row coterm--t-height)
