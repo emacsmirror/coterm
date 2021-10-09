@@ -2,6 +2,126 @@
 
 (require 'term)
 
+;;; Mode functions and configuration
+
+(defcustom coterm-term-name term-term-name
+  "Name to use for TERM."
+  :group 'comint
+  :type 'string)
+
+(defvar coterm-termcap-format term-termcap-format
+  "Termcap capabilities supported by coterm.")
+
+(defvar coterm-term-environment-function #'comint-term-environment
+  "Function to calculate environment for comint processes.
+If non-nil, it is called with zero arguments and should return a
+list of environment variable settings to apply to comint
+subprocesses.")
+
+(defvar coterm-start-process-function #'start-file-process
+  "Function called to start a comint process.
+It is called with the same arguments as `start-process' and
+should return a process.")
+
+(define-advice comint-exec-1 (:around (f &rest args) coterm-config)
+  "Make spawning processes for comint more configurable.
+With this advice installed on `coterm-exec-1', you use the
+settings `coterm-extra-environment-function' and
+`coterm-start-process-function' to control how comint spawns a
+process."
+  (cl-letf*
+      ((start-file-process (symbol-function #'start-file-process))
+       (comint-term-environment (symbol-function #'comint-term-environment))
+       ((symbol-function #'start-file-process)
+        (lambda (&rest args)
+          (fset #'start-file-process start-file-process)
+          (apply coterm-start-process-function args)))
+       ((symbol-function #'comint-term-environment)
+        (lambda (&rest args)
+          (fset #'comint-term-environment comint-term-environment)
+          (apply coterm-term-environment-function args))))
+    (apply f args)))
+
+;;;###autoload
+(define-minor-mode coterm-mode
+  "Improved terminal emulation in comint processes.
+When this mode is enabled, terminal emulation is enabled for all
+newly spawned comint processes, allowing you to use more complex
+console programs such as \"less\" and \"mpv\" and full-screen
+programs such as \"vi\", \"top\", \"htop\" or even \"emacs -nw\".
+
+Environment variables for comint processes are set according to
+variables `coterm-term-name' and `coterm-termcap-format'."
+  :global t
+  :group 'comint
+  (if coterm-mode
+
+      (progn
+        (add-hook 'comint-mode-hook #'coterm--init)
+        (setq coterm-term-environment-function
+              (lambda ()
+                (let (ret)
+                  (push (format "TERMINFO=%s" data-directory)
+                        ret)
+                  (when coterm-term-name
+                    (push (format "TERM=%s" coterm-term-name) ret))
+                  (when coterm-termcap-format
+                    (push (format coterm-termcap-format "TERMCAP="
+                                  coterm-term-name
+                                  (floor (window-screen-lines))
+                                  (window-max-chars-per-line))
+                          ret))
+                  ret)))
+        (setq coterm-start-process-function
+              (lambda (name buffer command &rest switches)
+                (apply #'start-file-process name buffer
+                       ;; Adapted from `term-exec-1'
+                       "sh" "-c"
+                       (format "stty -nl sane -echo 2>%s;\
+if [ $1 = .. ]; then shift; fi; exec \"$@\"" null-device)
+                       ".." command switches))))
+
+    (remove-hook 'comint-exec-hook #'coterm--init)
+    (setq coterm-term-environment-function #'comint-term-environment)
+    (setq coterm-start-process-function #'start-file-process)))
+
+;;; Raw mode
+
+(defvar coterm-char-mode-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map term-raw-map)
+    (define-key map [remap term-char-mode] #'coterm-char-mode)
+    (define-key map [remap term-line-mode] #'coterm-char-mode)
+    map))
+
+(define-minor-mode coterm-char-mode
+  "Send characters you type directly to the inferior process.
+When this mode is enabled, the keymap `coterm-char-mode-map' is
+active, which inherits from `term-raw-map'.  In this map, each
+character is sent to the process, except for the escape
+character (usually C-c).  You can set `term-escape-char' to
+customize it."
+  :lighter " CHAR")
+
+(defvar coterm--char-old-scroll-margin nil)
+
+(define-minor-mode coterm-scroll-snap-mode
+  "Keep scroll synchronized.
+Usually enabled for full-screen terminal programs to keep them on
+screen."
+  :keymap nil
+  (if coterm-scroll-snap-mode
+      (unless coterm--char-old-scroll-margin
+        (setq coterm--char-old-scroll-margin
+              (cons scroll-margin
+                    (local-variable-p 'scroll-margin)))
+        (setq-local scroll-margin 0))
+    (when-let ((margin coterm--char-old-scroll-margin))
+      (setq coterm--char-old-scroll-margin nil)
+      (if (cdr margin)
+          (setq scroll-margin (car margin))
+        (kill-local-variable 'scroll-margin)))))
+
 ;;; Terminal emulation
 
 (defconst coterm--t-control-seq-regexp
@@ -57,6 +177,37 @@ In sync with variables `coterm--t-home-marker',
 (defvar-local coterm--t-saved-cursor nil)
 (defvar-local coterm--t-insert-mode nil)
 (defvar-local coterm--t-unhandled-fragment nil)
+
+(defun coterm--comint-strip-CR (_)
+  "Remove all \\r characters from last output."
+  (save-excursion
+    (goto-char comint-last-output-start)
+    (let ((pmark (process-mark (get-buffer-process (current-buffer)))))
+      (while (progn (skip-chars-forward "^\r")
+                    (< (point) pmark))
+        (delete-char 1)))))
+
+(defun coterm--init ()
+  "Initialize current buffer for coterm."
+  (when-let ((process (get-buffer-process (current-buffer))))
+    (setq coterm--t-height (floor (window-screen-lines)))
+    (setq coterm--t-width (window-max-chars-per-line))
+    (setq coterm--t-scroll-beg 0)
+    (setq coterm--t-scroll-end coterm--t-height)
+
+    (setq-local comint-inhibit-carriage-motion t)
+    (add-hook 'comint-output-filter-functions #'coterm--comint-strip-CR)
+
+    (add-function :filter-return
+                  (local 'window-adjust-process-window-size-function)
+                  (lambda (size)
+                    (when size
+                      (coterm--t-reset-size (cdr size) (car size)))
+                    size)
+                  '((name . coterm-maybe-reset-size)))
+
+    (add-function :around (process-filter process)
+                  #'coterm--t-emulate-terminal)))
 
 (defun coterm--t-reset-size (height width)
   (setq coterm--t-height height)
@@ -274,8 +425,6 @@ If `coterm--t-home-marker' is nil, initialize it sensibly."
       (set-marker coterm--t-home-marker (point))
       (setq coterm--t-home-offset 0)
       (setq coterm--t-row 0))))
-
-(defvar coterm-scroll-snap-mode)
 
 (defun coterm--t-emulate-terminal (proc-filt process string)
   (when-let ((fragment coterm--t-unhandled-fragment))
@@ -537,154 +686,3 @@ If `coterm--t-home-marker' is nil, initialize it sensibly."
           (goto-char restore-point)
           (unless (eq restore-point pmark)
             (set-marker restore-point nil)))))))
-
-;;; Raw mode
-
-(defvar coterm-char-mode-map
-  (let ((map (make-sparse-keymap)))
-    (set-keymap-parent map term-raw-map)
-    (define-key map [remap term-char-mode] #'coterm-char-mode)
-    (define-key map [remap term-line-mode] #'coterm-char-mode)
-    map))
-
-(define-minor-mode coterm-char-mode
-  "Send characters you type directly to the inferior process.
-When this mode is enabled, the keymap `coterm-char-mode-map' is
-active, which inherits from `term-raw-map'.  In this map, each
-character is sent to the process, except for the escape
-character (usually C-c).  You can set `term-escape-char' to
-customize it."
-  :lighter " CHAR")
-
-(defvar coterm--char-old-scroll-margin nil)
-
-(define-minor-mode coterm-scroll-snap-mode
-  "Keep scroll synchronized.
-Usually enabled for full-screen terminal programs to keep them on
-screen."
-  :keymap nil
-  (if coterm-scroll-snap-mode
-      (unless coterm--char-old-scroll-margin
-        (setq coterm--char-old-scroll-margin
-              (cons scroll-margin
-                    (local-variable-p 'scroll-margin)))
-        (setq-local scroll-margin 0))
-    (when-let ((margin coterm--char-old-scroll-margin))
-      (setq coterm--char-old-scroll-margin nil)
-      (if (cdr margin)
-          (setq scroll-margin (car margin))
-        (kill-local-variable 'scroll-margin)))))
-
-;;; Mode functions and configuration
-
-(defun coterm--comint-strip-CR (_)
-  "Remove all \\r characters from last output."
-  (save-excursion
-    (goto-char comint-last-output-start)
-    (let ((pmark (process-mark (get-buffer-process (current-buffer)))))
-      (while (progn (skip-chars-forward "^\r")
-                    (< (point) pmark))
-        (delete-char 1)))))
-
-(defun coterm--init ()
-  "Initialize current buffer for coterm."
-  (when-let ((process (get-buffer-process (current-buffer))))
-    (setq coterm--t-height (floor (window-screen-lines)))
-    (setq coterm--t-width (window-max-chars-per-line))
-    (setq coterm--t-scroll-beg 0)
-    (setq coterm--t-scroll-end coterm--t-height)
-
-    (setq-local comint-inhibit-carriage-motion t)
-    (add-hook 'comint-output-filter-functions #'coterm--comint-strip-CR)
-
-    (add-function :filter-return
-                  (local 'window-adjust-process-window-size-function)
-                  (lambda (size)
-                    (when size
-                      (coterm--t-reset-size (cdr size) (car size)))
-                    size)
-                  '((name . coterm-maybe-reset-size)))
-
-    (add-function :around (process-filter process)
-                  #'coterm--t-emulate-terminal)))
-
-(defcustom coterm-term-name term-term-name
-  "Name to use for TERM."
-  :group 'comint
-  :type 'string)
-
-(defvar coterm-termcap-format term-termcap-format
-  "Termcap capabilities supported by coterm.")
-
-(defvar coterm-term-environment-function #'comint-term-environment
-  "Function to calculate environment for comint processes.
-If non-nil, it is called with zero arguments and should return a
-list of environment variable settings to apply to comint
-subprocesses.")
-
-(defvar coterm-start-process-function #'start-file-process
-  "Function called to start a comint process.
-It is called with the same arguments as `start-process' and
-should return a process.")
-
-(define-advice comint-exec-1 (:around (f &rest args) coterm-config)
-  "Make spawning processes for comint more configurable.
-With this advice installed on `coterm-exec-1', you use the
-settings `coterm-extra-environment-function' and
-`coterm-start-process-function' to control how comint spawns a
-process."
-  (cl-letf*
-      ((start-file-process (symbol-function #'start-file-process))
-       (comint-term-environment (symbol-function #'comint-term-environment))
-       ((symbol-function #'start-file-process)
-        (lambda (&rest args)
-          (fset #'start-file-process start-file-process)
-          (apply coterm-start-process-function args)))
-       ((symbol-function #'comint-term-environment)
-        (lambda (&rest args)
-          (fset #'comint-term-environment comint-term-environment)
-          (apply coterm-term-environment-function args))))
-    (apply f args)))
-
-;;;###autoload
-(define-minor-mode coterm-mode
-  "Improved terminal emulation in comint processes.
-When this mode is enabled, terminal emulation is enabled for all
-newly spawned comint processes, allowing you to use more complex
-console programs such as \"less\" and \"mpv\" and full-screen
-programs such as \"vi\", \"top\", \"htop\" or even \"emacs -nw\".
-
-Environment variables for comint processes are set according to
-variables `coterm-term-name' and `coterm-termcap-format'."
-  :global t
-  :group 'comint
-  (if coterm-mode
-
-      (progn
-        (add-hook 'comint-mode-hook #'coterm--init)
-        (setq coterm-term-environment-function
-              (lambda ()
-                (let (ret)
-                  (push (format "TERMINFO=%s" data-directory)
-                        ret)
-                  (when coterm-term-name
-                    (push (format "TERM=%s" coterm-term-name) ret))
-                  (when coterm-termcap-format
-                    (push (format coterm-termcap-format "TERMCAP="
-                                  coterm-term-name
-                                  (floor (window-screen-lines))
-                                  (window-max-chars-per-line))
-                          ret))
-                  ret)))
-        (setq coterm-start-process-function
-              (lambda (name buffer command &rest switches)
-                (apply #'start-file-process name buffer
-                       ;; Adapted from `term-exec-1'
-                       "sh" "-c"
-                       (format "stty -nl sane -echo 2>%s;\
-if [ $1 = .. ]; then shift; fi; exec \"$@\"" null-device)
-                       ".." command switches))))
-
-    (remove-hook 'comint-exec-hook #'coterm--init)
-    (setq coterm-term-environment-function #'comint-term-environment)
-    (setq coterm-start-process-function #'start-file-process)))
