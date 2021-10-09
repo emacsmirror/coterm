@@ -8,7 +8,7 @@
 (defconst coterm--t-control-seq-regexp
   (concat
    ;; A control character,
-   "\\(?:[\r\n\000\007\b\016\017]\\|"
+   "\\(?:[\n\000\007\b\016\017]\\|\r\n?\\|"
    ;; a C1 escape coded character (see [ECMA-48] section 5.3 "Elements
    ;; of the C1 set"),
    "\e\\(?:[DM78c]\\|"
@@ -342,12 +342,22 @@ initialize it sensibly."
               (setq ctl-end (match-end 0))
 
               (pcase (aref string match)
-                ((and ?\n
-                      (guard coterm--t-pmark-in-sync)
-                      (guard (= pmark (point-max)))
-                      (guard (not (coterm--t-scroll-by-deletion-p))))
-                 (pass-through)
-                 (cl-incf will-insert-newlines))
+                ((and ?\r (guard (= ctl-end (+ 2 match))))
+                 ;; A match string of length two and beginning with \r means
+                 ;; that we have matched "\r\n".  In this case, and if we are
+                 ;; at eob, we pass-through to avoid an unnecessary call to
+                 ;; `substring' which is expensive.  In the most common when
+                 ;; the process just outputs text at eob without any control
+                 ;; sequences, we will end up inserting the whole string
+                 ;; without a single call to `substring'.
+                 (if (and coterm--t-pmark-in-sync
+                          (= pmark (point-max))
+                          (not (coterm--t-scroll-by-deletion-p)))
+                     (progn (pass-through)
+                            (cl-incf will-insert-newlines))
+                   (ins)
+                   (setq coterm--t-col 0)
+                   (coterm--t-down-line proc-filt process)))
                 (?\n (ins) ;; (terminfo: cud1, ind)
                      (coterm--t-down-line proc-filt process))
                 (?\r (ins) ;; (terminfo: cr)
@@ -543,6 +553,15 @@ initialize it sensibly."
 (defcustom coterm-term-name term-term-name
   "Name to use for TERM.")
 
+(defun coterm--comint-strip-CR (_)
+  "Remove all \\r characters from last output."
+  (save-excursion
+    (goto-char comint-last-output-start)
+    (let ((pmark (process-mark (get-buffer-process (current-buffer)))))
+      (while (progn (skip-chars-forward "^\r")
+                    (< (point) pmark))
+        (delete-char 1)))))
+
 (defun coterm--init ()
   "Initialize current buffer for coterm."
   (when-let ((process (get-buffer-process (current-buffer))))
@@ -552,6 +571,7 @@ initialize it sensibly."
     (setq coterm--t-scroll-end coterm--t-height)
 
     (setq-local comint-inhibit-carriage-motion t)
+    (add-hook 'comint-output-filter-functions #'coterm--comint-strip-CR)
 
     (add-function :filter-return
                   (local 'window-adjust-process-window-size-function)
