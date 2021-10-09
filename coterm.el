@@ -610,6 +610,8 @@ process."
         (setq coterm-term-environment-function
               (lambda ()
                 (let (ret)
+                  (push (format "TERMINFO=%s" data-directory)
+                        ret)
                   (when coterm-term-name
                     (push (format "TERM=%s" coterm-term-name) ret))
                   (when coterm-termcap-format
