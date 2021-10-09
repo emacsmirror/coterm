@@ -610,8 +610,16 @@ process."
           (apply coterm-term-environment-function args))))
     (apply f args)))
 
+;;;###autoload
 (define-minor-mode coterm-mode
-  "Better terminal emulation in comint processes."
+  "Improved terminal emulation in comint processes.
+When this mode is enabled, terminal emulation is enabled for all
+newly spawned comint processes, allowing you to use more complex
+console programs such as \"less\" and \"mpv\" and full-screen
+programs such as \"vi\", \"top\", \"htop\" or even \"emacs -nw\".
+
+Environment variables for comint processes are set according to
+variables `coterm-term-name' and `coterm-termcap-format'."
   :global t
   :group 'comint
   (if coterm-mode
