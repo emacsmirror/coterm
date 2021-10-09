@@ -68,7 +68,8 @@ In sync with variables `coterm--t-home-marker',
     (when (>= coterm--t-row coterm--t-height)
       (cl-incf coterm--t-home-offset (- coterm--t-row coterm--t-height -1))
       (setq coterm--t-row (1- coterm--t-height))
-      (coterm--t-normalize-home-offset))))
+      (save-excursion
+        (coterm--t-normalize-home-offset)))))
 
 (defun coterm--t-goto (row col)
   "Move point to a position that approximates ROW and COL.
@@ -128,14 +129,13 @@ characters that were moved after the column specified by
     (setq coterm--t-pmark-in-sync nil)))
 
 (defun coterm--t-normalize-home-offset ()
-  (save-excursion
-    (goto-char coterm--t-home-marker)
-    (let ((left-to-move (forward-line coterm--t-home-offset)))
-      (unless (bolp)
-        (cl-incf left-to-move)
-        (forward-line 0))
-      (set-marker coterm--t-home-marker (point))
-      (setq coterm--t-home-offset (max 0 left-to-move)))))
+  (goto-char coterm--t-home-marker)
+  (let ((left-to-move (forward-line coterm--t-home-offset)))
+    (unless (bolp)
+      (cl-incf left-to-move)
+      (forward-line 0))
+    (set-marker coterm--t-home-marker (point))
+    (setq coterm--t-home-offset (max 0 left-to-move))))
 
 (defun coterm--t-scroll-by-deletion-p ()
   (or (/= coterm--t-scroll-beg 0)
@@ -197,37 +197,24 @@ PROC-FILT, so use it sparingly, usually only before inserting
 non-whitespace text."
   (unless coterm--t-pmark-in-sync
     (let ((pmark (process-mark process)))
-      (save-excursion
-        (goto-char coterm--t-home-marker)
+      (goto-char coterm--t-home-marker)
 
-        (let ((newlines (forward-line
-                         (+ coterm--t-row coterm--t-home-offset))))
-          (unless (bolp)
-            (cl-incf newlines))
-          (unless (zerop newlines)
-            (set-marker pmark (point))
-            (coterm--t-apply-proc-filt
-             proc-filt process (make-string newlines ?\n))))
-
-        (let ((col (move-to-column coterm--t-col)))
+      (let ((newlines (forward-line
+                       (+ coterm--t-row coterm--t-home-offset))))
+        (unless (bolp)
+          (cl-incf newlines))
+        (unless (zerop newlines)
           (set-marker pmark (point))
-          (when (< col coterm--t-col)
-            (coterm--t-apply-proc-filt
-             proc-filt process (make-string (- coterm--t-col col) ?\s))))))
+          (coterm--t-apply-proc-filt
+           proc-filt process (make-string newlines ?\n))))
+
+      (let ((col (move-to-column coterm--t-col)))
+        (set-marker pmark (point))
+        (when (< col coterm--t-col)
+          (coterm--t-apply-proc-filt
+           proc-filt process (make-string (- coterm--t-col col) ?\s)))))
     (setq coterm--t-pmark-in-sync t)
     (coterm--t-normalize-home-offset)))
-
-(defun coterm--t-approximate-pmark (pmark)
-  "Sets PMARK to point close to `coterm--t-row' and col.
-Don't modify buffer.  If `coterm--t-row' and `coterm--t-col'
-point to an unreachable location, locate PMARK as close to it as
-possible and return nil.  Otherwise, locate PMARK exactly and
-return t."
-  (or coterm--t-pmark-in-sync
-      (setq coterm--t-pmark-in-sync
-            (save-excursion
-              (prog1 (coterm--t-goto coterm--t-row coterm--t-col)
-                (set-marker pmark (point)))))))
 
 (defun coterm--t-insert (proc-filt process str newlines)
   "Insert STR using PROC-FILT and PROCESS.
@@ -237,33 +224,31 @@ zero, insertion must happen at the end of accessible portion of
 buffer and the scrolling region must cover the whole screen."
   (coterm--t-adjust-pmark proc-filt process)
   (coterm--t-apply-proc-filt proc-filt process str)
-  (save-excursion
-    (goto-char (process-mark process))
-    (let ((column (current-column)))
-      (if (zerop newlines)
-          (if coterm--t-insert-mode
-              ;; In insert mode, delete text outside the width of the terminal
-              (progn
-                (move-to-column coterm--t-width)
-                (delete-region
-                 (point) (progn (forward-line 1) (1- (point)))))
-            ;; If not in insert mode, replace text
-            (when (> column coterm--t-col)
+  (goto-char (process-mark process))
+  (let ((column (current-column)))
+    (if (zerop newlines)
+        (if coterm--t-insert-mode
+            ;; In insert mode, delete text outside the width of the terminal
+            (progn
+              (move-to-column coterm--t-width)
               (delete-region
-               (point)
-               (progn (move-to-column (- (* 2 column) coterm--t-col))
-                      (point)))))
-        (cl-incf coterm--t-row newlines)
-        ;; We've inserted newlines, so we must scroll if necessary
-        (when (>= coterm--t-row coterm--t-height)
-          (save-excursion
-            (goto-char coterm--t-home-marker)
-            (forward-line (+ coterm--t-home-offset
-                             (- coterm--t-row coterm--t-height -1)))
-            (set-marker coterm--t-home-marker (point))
-            (setq coterm--t-home-offset 0)
-            (setq coterm--t-row (1- coterm--t-height)))))
-      (setq coterm--t-col (min column (1- coterm--t-width))))))
+               (point) (progn (forward-line 1) (1- (point)))))
+          ;; If not in insert mode, replace text
+          (when (> column coterm--t-col)
+            (delete-region
+             (point)
+             (progn (move-to-column (- (* 2 column) coterm--t-col))
+                    (point)))))
+      (cl-incf coterm--t-row newlines)
+      ;; We've inserted newlines, so we must scroll if necessary
+      (when (>= coterm--t-row coterm--t-height)
+        (goto-char coterm--t-home-marker)
+        (forward-line (+ coterm--t-home-offset
+                         (- coterm--t-row coterm--t-height -1)))
+        (set-marker coterm--t-home-marker (point))
+        (setq coterm--t-home-offset 0)
+        (setq coterm--t-row (1- coterm--t-height))))
+    (setq coterm--t-col (min column (1- coterm--t-width)))))
 
 (defun coterm--t-maybe-adjust-from-pmark (pos)
   "Point `coterm--t-row' and `coterm--t-col' POS.
@@ -271,23 +256,22 @@ If `coterm--t-home-marker' is nil, initialize it sensibly."
   (unless coterm--t-home-marker
     (setq coterm--t-home-marker (point-min-marker))
     (setq coterm--t-home-offset 0))
-  (save-excursion
-    (goto-char pos)
-    (setq coterm--t-col (current-column))
-    (coterm--t-normalize-home-offset)
-    (forward-line 0)
-    (if (> (point) coterm--t-home-marker)
-        ;; Here, `coterm--t-home-offset' is guaranteed to be 0
-        (save-restriction
-          (narrow-to-region coterm--t-home-marker (point))
-          (let ((lines-left (forward-line (- 1 coterm--t-height))))
-            (when (= 0 lines-left)
-              (set-marker coterm--t-home-marker (point)))
-            (setq coterm--t-row (+ -1 coterm--t-height lines-left))))
-      (progn
-        (set-marker coterm--t-home-marker (point))
-        (setq coterm--t-home-offset 0)
-        (setq coterm--t-row 0)))))
+  (coterm--t-normalize-home-offset)
+  (goto-char pos)
+  (setq coterm--t-col (current-column))
+  (forward-line 0)
+  (if (> (point) coterm--t-home-marker)
+      ;; Here, `coterm--t-home-offset' is guaranteed to be 0
+      (save-restriction
+        (narrow-to-region coterm--t-home-marker (point))
+        (let ((lines-left (forward-line (- 1 coterm--t-height))))
+          (when (= 0 lines-left)
+            (set-marker coterm--t-home-marker (point)))
+          (setq coterm--t-row (+ -1 coterm--t-height lines-left))))
+    (progn
+      (set-marker coterm--t-home-marker (point))
+      (setq coterm--t-home-offset 0)
+      (setq coterm--t-row 0))))
 
 (defun coterm--t-emulate-terminal (proc-filt process string)
   (when-let ((fragment coterm--t-unhandled-fragment))
