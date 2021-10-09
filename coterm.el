@@ -1,5 +1,7 @@
 ;; -*- lexical-binding: t; -*-
 
+(require 'term)
+
 ;;; Terminal emulation
 
 (defconst coterm--t-control-seq-regexp
@@ -273,6 +275,8 @@ If `coterm--t-home-marker' is nil, initialize it sensibly."
       (setq coterm--t-home-offset 0)
       (setq coterm--t-row 0))))
 
+(defvar coterm-scroll-snap-mode)
+
 (defun coterm--t-emulate-terminal (proc-filt process string)
   (when-let ((fragment coterm--t-unhandled-fragment))
     (setq string (concat fragment string))
@@ -521,18 +525,57 @@ If `coterm--t-home-marker' is nil, initialize it sensibly."
             (goto-char pmark)
             (skip-chars-forward " \n")
             (when (eobp)
-              (delete-region pmark (point))))
+              (delete-region pmark (point)))
+
+            ;; Scroll window, but only if selected and if point is on pmark
+            (when (and coterm-scroll-snap-mode
+                       (= restore-point pmark)
+                       (eq buf (window-buffer (selected-window))))
+              (coterm--t-goto 0 0)
+              (recenter 0)))
 
           (goto-char restore-point)
           (unless (eq restore-point pmark)
             (set-marker restore-point nil)))))))
 
-;;; Mode functions and configuration
+;;; Raw mode
 
-(defcustom coterm-term-name "eterm-color"
-  "Name to use for TERM."
-  :group 'comint
-  :type 'string)
+(defvar coterm-char-mode-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map term-raw-map)
+    (define-key map [remap term-char-mode] #'coterm-char-mode)
+    (define-key map [remap term-line-mode] #'coterm-char-mode)
+    map))
+
+(define-minor-mode coterm-char-mode
+  "Send characters you type directly to the inferior process.
+When this mode is enabled, the keymap `coterm-char-mode-map' is
+active, which inherits from `term-raw-map'.  In this map, each
+character is sent to the process, except for the escape
+character (usually C-c).  You can set `term-escape-char' to
+customize it."
+  :lighter " CHAR")
+
+(defvar coterm--char-old-scroll-margin nil)
+
+(define-minor-mode coterm-scroll-snap-mode
+  "Keep scroll synchronized.
+Usually enabled for full-screen terminal programs to keep them on
+screen."
+  :keymap nil
+  (if coterm-scroll-snap-mode
+      (unless coterm--char-old-scroll-margin
+        (setq coterm--char-old-scroll-margin
+              (cons scroll-margin
+                    (local-variable-p 'scroll-margin)))
+        (setq-local scroll-margin 0))
+    (when-let ((margin coterm--char-old-scroll-margin))
+      (setq coterm--char-old-scroll-margin nil)
+      (if (cdr margin)
+          (setq scroll-margin (car margin))
+        (kill-local-variable 'scroll-margin)))))
+
+;;; Mode functions and configuration
 
 (defun coterm--comint-strip-CR (_)
   "Remove all \\r characters from last output."
@@ -565,6 +608,14 @@ If `coterm--t-home-marker' is nil, initialize it sensibly."
     (add-function :around (process-filter process)
                   #'coterm--t-emulate-terminal)))
 
+(defcustom coterm-term-name term-term-name
+  "Name to use for TERM."
+  :group 'comint
+  :type 'string)
+
+(defvar coterm-termcap-format term-termcap-format
+  "Termcap capabilities supported by coterm.")
+
 (defvar coterm-term-environment-function #'comint-term-environment
   "Function to calculate environment for comint processes.
 If non-nil, it is called with zero arguments and should return a
@@ -575,21 +626,6 @@ subprocesses.")
   "Function called to start a comint process.
 It is called with the same arguments as `start-process' and
 should return a process.")
-
-(defvar coterm-termcap-format
-  "%s%s:li#%d:co#%d:cl=\\E[H\\E[J:cd=\\E[J:bs:am:xn:cm=\\E[%%i%%d;%%dH\
-:nd=\\E[C:up=\\E[A:ce=\\E[K:ho=\\E[H:pt\
-:al=\\E[L:dl=\\E[M:DL=\\E[%%dM:AL=\\E[%%dL:cs=\\E[%%i%%d;%%dr:sf=^J\
-:dc=\\E[P:DC=\\E[%%dP:IC=\\E[%%d@:im=\\E[4h:ei=\\E[4l:mi:\
-:mb=\\E[5m:mh=\\E[2m:ZR=\\E[23m:ZH=\\E[3m\
-:so=\\E[7m:se=\\E[m:us=\\E[4m:ue=\\E[m:md=\\E[1m:mr=\\E[7m:me=\\E[m\
-:UP=\\E[%%dA:DO=\\E[%%dB:LE=\\E[%%dD:RI=\\E[%%dC\
-:kl=\\EOD:kd=\\EOB:kr=\\EOC:ku=\\EOA:kN=\\E[6~:kP=\\E[5~:@7=\\E[4~:kh=\\E[1~\
-:mk=\\E[8m:cb=\\E[1K:op=\\E[39;49m:Co#256:pa#32767\
-:AB=\\E[48;5;%%dm:AF=\\E[38;5;%%dm:cr=^M\
-:bl=^G:do=^J:le=^H:ta=^I:se=\\E[27m:ue=\\E[24m\
-:kb=^?:kD=^[[3~:sc=\\E7:rc=\\E8:r1=\\Ec:"
-  "Termcap capabilities supported by coterm.")
 
 (define-advice comint-exec-1 (:around (f &rest args) coterm-config)
   "Make spawning processes for comint more configurable.
