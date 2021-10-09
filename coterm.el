@@ -262,31 +262,28 @@ buffer and the scrolling region must cover the whole screen."
       (setq coterm--t-col (min column (1- coterm--t-width))))))
 
 (defun coterm--t-maybe-adjust-from-pmark (pos)
-  "If `coterm--t-row' and col are nil, point them to POS.
-`coterm--t-home-marker' may also be nil, in which case,
-initialize it sensibly."
+  "Point `coterm--t-row' and `coterm--t-col' POS.
+If `coterm--t-home-marker' is nil, initialize it sensibly."
   (unless coterm--t-home-marker
     (setq coterm--t-home-marker (point-min-marker))
     (setq coterm--t-home-offset 0))
-  (unless coterm--t-row
-    (save-excursion
-      (goto-char pos)
-      (setq coterm--t-col (current-column))
-      (coterm--t-normalize-home-offset)
-      (forward-line 0)
-      (if (> (point) coterm--t-home-marker)
-          ;; Here, `coterm--t-home-offset' is guaranteed to be 0
-          (save-restriction
-            (narrow-to-region coterm--t-home-marker (point))
-            (let ((lines-left (forward-line (- 1 coterm--t-height))))
-              (when (= 0 lines-left)
-                (set-marker coterm--t-home-marker (point)))
-              (setq coterm--t-row (+ -1 coterm--t-height lines-left))))
-        (progn
-          (set-marker coterm--t-home-marker (point))
-          (setq coterm--t-home-offset 0)
-          (setq coterm--t-row 0))))
-    (setq coterm--t-pmark-in-sync t)))
+  (save-excursion
+    (goto-char pos)
+    (setq coterm--t-col (current-column))
+    (coterm--t-normalize-home-offset)
+    (forward-line 0)
+    (if (> (point) coterm--t-home-marker)
+        ;; Here, `coterm--t-home-offset' is guaranteed to be 0
+        (save-restriction
+          (narrow-to-region coterm--t-home-marker (point))
+          (let ((lines-left (forward-line (- 1 coterm--t-height))))
+            (when (= 0 lines-left)
+              (set-marker coterm--t-home-marker (point)))
+            (setq coterm--t-row (+ -1 coterm--t-height lines-left))))
+      (progn
+        (set-marker coterm--t-home-marker (point))
+        (setq coterm--t-home-offset 0)
+        (setq coterm--t-row 0)))))
 
 (defun coterm--t-emulate-terminal (proc-filt process string)
   (when-let ((fragment coterm--t-unhandled-fragment))
@@ -530,19 +527,13 @@ initialize it sensibly."
              (t
               (ins)))
 
-            ;; Here, we are at the end of process filtering. `coterm--t-row'
-            ;; and `coterm--t-col' may point to a not yet existent location
-            ;; after (point-max).  First, we move `pmark' as close to this
-            ;; position as possible.
-            (if (coterm--t-approximate-pmark pmark)
-                ;; If we succeed, clear `coterm--t-row' and col.  On next
-                ;; output, we will initialize them to point to `pmark'.
-                (setq coterm--t-row nil
-                      coterm--t-col nil
-                      coterm--t-pmark-in-sync nil)
-              ;; If we don't succeed, leave the variables unchanged.  They will
-              ;; be used to handle next output.
-              (ignore)))
+            ;; Synchronize pmark and remove all trailing whitespace after it.
+            (coterm--t-adjust-pmark proc-filt process)
+            (widen)
+            (goto-char pmark)
+            (skip-chars-forward " \n")
+            (when (eobp)
+              (delete-region pmark (point))))
 
           (goto-char restore-point)
           (unless (eq restore-point pmark)
