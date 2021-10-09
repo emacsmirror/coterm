@@ -534,13 +534,12 @@ initialize it sensibly."
 
 ;;; Mode functions and configuration
 
-(defcustom coterm-term-name ;; term-term-name
-  "dumb"
+(defcustom coterm-term-name term-term-name
   "Name to use for TERM.")
 
-(defun coterm-comint-exec-h ()
-  (when-let (((derived-mode-p #'comint-mode))
-             (process (get-buffer-process (current-buffer))))
+(defun coterm--init ()
+  "Initialize current buffer for coterm."
+  (when-let ((process (get-buffer-process (current-buffer))))
     (setq coterm--t-height (floor (window-screen-lines)))
     (setq coterm--t-width (window-max-chars-per-line))
     (setq coterm--t-scroll-beg 0)
@@ -557,30 +556,72 @@ initialize it sensibly."
                   '((name . coterm-maybe-reset-size)))
 
     (add-function :around (process-filter process)
-                  #'coterm--t-emulate-terminal))
+                  #'coterm--t-emulate-terminal)))
 
-  ;; After `term-exec-hook', the major mode is often changed (for example into
-  ;; `shell-mode', which kills our local variables, so set them again after
-  ;; changing major modes.
-  (add-hook 'after-change-major-mode-hook #'coterm-comint-exec-h nil t))
+(defvar coterm-term-environment-function #'comint-term-environment
+  "Function to calculate environment for comint processes.
+If non-nil, it is called with zero arguments and should return a
+list of environment variable settings to apply to comint
+subprocesses.")
 
-(put #'coterm-comint-exec-h 'permanent-local-hook t)
+(defvar coterm-start-process-function #'start-file-process
+  "Function called to start a comint process.
+It is called with the same arguments as `start-process' and
+should return a process.")
 
-(defvar coterm--old-comint-terminfo-terminal nil)
+(defcustom coterm-term-name term-term-name
+  "Name to use for TERM.")
+
+(defvar coterm-termcap-format term-termcap-format
+  "Termcap capabilities supported.")
+
+(define-advice comint-exec-1 (:around (f &rest args) coterm-config)
+  "Make spawning processes for comint more configurable.
+With this advice installed on `coterm-exec-1', you use the
+settings `coterm-extra-environment-function' and
+`coterm-start-process-function' to control how comint spawns a
+process."
+  (cl-letf*
+      ((start-file-process (symbol-function #'start-file-process))
+       (comint-term-environment (symbol-function #'comint-term-environment))
+       ((symbol-function #'start-file-process)
+        (lambda (&rest args)
+          (fset #'start-file-process start-file-process)
+          (apply coterm-start-process-function args)))
+       ((symbol-function #'comint-term-environment)
+        (lambda (&rest args)
+          (fset #'comint-term-environment comint-term-environment)
+          (apply coterm-term-environment-function args))))
+    (apply f args)))
 
 (define-minor-mode coterm-mode
   "Better terminal emulation in comint processes."
   :global t
   (if coterm-mode
+
       (progn
-        (add-hook 'comint-exec-hook #'coterm-comint-exec-h)
-        (when coterm-term-name
-          (unless coterm--old-comint-terminfo-terminal
-            (setq coterm--old-comint-terminfo-terminal
-                  (list comint-terminfo-terminal)))
-          (setq comint-terminfo-terminal coterm-term-name)))
+        (add-hook 'comint-mode-hook #'coterm--init)
+        (setq coterm-term-environment-function
+              (lambda ()
+                (let (ret)
+                  (when coterm-term-name
+                    (push (format "TERM=%s" coterm-term-name) ret))
+                  (when coterm-termcap-format
+                    (push (format coterm-termcap-format "TERMCAP="
+                                  coterm-term-name
+                                  (floor (window-screen-lines))
+                                  (window-max-chars-per-line))
+                          ret))
+                  ret)))
+        (setq coterm-start-process-function
+              (lambda (name buffer command &rest switches)
+                (apply #'start-file-process name buffer
+                       ;; Adapted from `term-exec-1'
+                       "sh" "-c"
+                       (format "stty -nl sane -echo 2>%s;\
+if [ $1 = .. ]; then shift; fi; exec \"$@\"" null-device)
+                       ".." command switches))))
+
     (remove-hook 'comint-exec-hook #'coterm-comint-exec-h)
-    (when coterm--old-comint-terminfo-terminal
-      (setq comint-terminfo-terminal
-            (car coterm--old-comint-terminfo-terminal))
-      (setq coterm--old-comint-terminfo-terminal nil))))
+    (setq coterm-term-environment-function #'comint-term-environment)
+    (setq coterm-start-process-function #'start-file-process)))
