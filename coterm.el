@@ -224,6 +224,7 @@ In sync with variables `coterm--t-home-marker',
   (when-let ((process (get-buffer-process (current-buffer))))
     (setq coterm--t-height (floor (window-screen-lines)))
     (setq coterm--t-width (window-max-chars-per-line))
+    (setq coterm--t-home-marker (point-min-marker))
     (setq coterm--t-scroll-beg 0)
     (setq coterm--t-scroll-end coterm--t-height)
 
@@ -253,8 +254,9 @@ In sync with variables `coterm--t-home-marker',
     (when (>= coterm--t-row coterm--t-height)
       (cl-incf coterm--t-home-offset (- coterm--t-row coterm--t-height -1))
       (setq coterm--t-row (1- coterm--t-height))
-      (save-excursion
-        (coterm--t-normalize-home-offset)))))
+      (let ((opoint (point)))
+        (coterm--t-normalize-home-offset)
+        (goto-char opoint)))))
 
 (defun coterm--t-goto (row col)
   "Move point to a position that approximates ROW and COL.
@@ -435,12 +437,8 @@ buffer and the scrolling region must cover the whole screen."
         (setq coterm--t-row (1- coterm--t-height))))
     (setq coterm--t-col (min column (1- coterm--t-width)))))
 
-(defun coterm--t-maybe-adjust-from-pmark (pos)
-  "Point `coterm--t-row' and `coterm--t-col' POS.
-If `coterm--t-home-marker' is nil, initialize it sensibly."
-  (unless coterm--t-home-marker
-    (setq coterm--t-home-marker (point-min-marker))
-    (setq coterm--t-home-offset 0))
+(defun coterm--t-adjust-from-pmark (pos)
+  "Point `coterm--t-row' and `coterm--t-col' POS."
   (coterm--t-normalize-home-offset)
   (goto-char pos)
   (setq coterm--t-col (current-column))
@@ -499,7 +497,7 @@ If `coterm--t-home-marker' is nil, initialize it sensibly."
         (with-current-buffer buf
           (setq restore-point (if (= (point) pmark) pmark (point-marker)))
           (setq old-pmark (copy-marker pmark window-point-insertion-type))
-          (coterm--t-maybe-adjust-from-pmark pmark)
+          (coterm--t-adjust-from-pmark pmark)
           (save-restriction
             (widen)
             (unless (text-property-any
