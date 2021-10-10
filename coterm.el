@@ -436,6 +436,7 @@ If `coterm--t-home-marker' is nil, initialize it sensibly."
          (will-insert-newlines 0)
          restore-point
          last-match-end
+         old-pmark
          buf
          ctl-params ctl-end)
 
@@ -465,6 +466,7 @@ If `coterm--t-home-marker' is nil, initialize it sensibly."
 
         (with-current-buffer buf
           (setq restore-point (if (= (point) pmark) pmark (point-marker)))
+          (setq old-pmark (copy-marker pmark window-point-insertion-type))
           (coterm--t-maybe-adjust-from-pmark pmark)
           (save-restriction
             (widen)
@@ -543,7 +545,7 @@ If `coterm--t-home-marker' is nil, initialize it sensibly."
                    (?A (ins)) ;; Ignore term.el specific \eAnSiT sequences
                    (?\[
                     (pcase (aref string (1- ctl-end))
-                      (?m ; Let `comint-output-filter-functions' handle this
+                      (?m ;; Let `comint-output-filter-functions' handle this
                        (pass-through))
                       (char
                        (setq ctl-params (mapcar #'string-to-number
@@ -697,9 +699,25 @@ If `coterm--t-home-marker' is nil, initialize it sensibly."
               (coterm--t-goto 0 0)
               (recenter 0)))
 
+          ;; Restore point (this restores it only for the selected window)
           (goto-char restore-point)
           (unless (eq restore-point pmark)
-            (set-marker restore-point nil)))))))
+            (set-marker restore-point nil))
+
+          ;; Restore points of non-selected windows, if their `window-point'
+          ;; was on pmark
+          (let* ((sel-win (selected-window))
+                 (w (next-window sel-win nil t)))
+            ;; Avoid infinite loop in strange case where minibuffer window
+            ;; is selected but not active.
+            (while (window-minibuffer-p w)
+              (setq w (next-window w nil t)))
+            (while (not (eq w sel-win))
+              (and (eq buf (window-buffer w))
+                   (= (window-point w) old-pmark)
+                   (set-window-point w pmark))
+              (setq w (next-window w nil t)))
+            (set-marker old-pmark nil)))))))
 
 (provide 'coterm)
 ;;; coterm.el ends here
