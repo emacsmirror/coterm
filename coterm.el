@@ -241,19 +241,20 @@ If point is not on process mark, leave `coterm-char-mode' and
     (let ((opoint (point)))
       (forward-line 0)
       (prog1
-          (and
-           (looking-at
-            (concat
-             ":\\|"
-             "(END)\\|"
-             "byte [0-9]+\\|"
-             "100%\\|"
-             "\\(?:[^\n]* \\)?" "[0-9]?[0-9]%\\|"
-             "[^\n]*(press h for help or q to quit)"))
-           (when (= opoint (match-end 0))
-             (unless coterm-char-mode (coterm-char-mode 1))
-             (unless coterm-scroll-snap-mode (coterm-scroll-snap-mode 1))
-             t))
+          (when (looking-at
+                 (concat
+                  "\\(?:"
+                  ":\\|"
+                  "(END)\\|"
+                  "byte [0-9]+\\|"
+                  "100%\\|"
+                  "\\(?:.* \\)?" "[0-9]?[0-9]%\\|"
+                  ".*(press h for help or q to quit)\\|"
+                  ".*(press RETURN)"
+                  "\\)\\'"))
+            (unless coterm-char-mode (coterm-char-mode 1))
+            (unless coterm-scroll-snap-mode (coterm-scroll-snap-mode 1))
+            t)
         (goto-char opoint)))))
 
 (defun coterm--auto-char-mpv-prompt ()
@@ -291,7 +292,7 @@ active if these status prompt erasures are detected."
     (let ((opoint (point)))
       (forward-line -1)
       (prog1 (looking-at
-              (concat "\\(?:[^\n]*\n\\)?"
+              (concat "\\(?:.*\n\\)?"
                       "A?V?: "
                       "[0-9][0-9]:[0-9][0-9]:[0-9][0-9] / "
                       "[0-9][0-9]:[0-9][0-9]:[0-9][0-9] "
