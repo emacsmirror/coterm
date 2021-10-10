@@ -500,11 +500,15 @@ buffer and the scrolling region must cover the whole screen."
           (coterm--t-adjust-from-pmark pmark)
           (save-restriction
             (widen)
-            (unless (text-property-any
-                     pmark (point-max) 'field 'output)
-              ;; If pmark is at the end of buffer, not counting user input,
-              ;; prevent changing this user input by narrowing the buffer
-              (narrow-to-region (point-min) pmark))
+            (goto-char (point-max))
+            ;; Use narrowing to prevent modification of user input at end of
+            ;; buffer
+            (unless (eq (get-char-property (max 1 (1- (point-max))) 'field)
+                        'output)
+              (goto-char (point-max))
+              (text-property-search-backward 'field 'output)
+              (when (<= pmark (point))
+                (narrow-to-region (point-min) (point))))
 
             (while (setq match (string-match coterm--t-control-seq-regexp
                                              string ctl-end))
