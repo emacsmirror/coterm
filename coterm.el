@@ -111,16 +111,45 @@ Usually enabled for full-screen terminal programs to keep them on
 screen."
   :keymap nil
   (if coterm-scroll-snap-mode
-      (unless coterm--char-old-scroll-margin
-        (setq coterm--char-old-scroll-margin
-              (cons scroll-margin
-                    (local-variable-p 'scroll-margin)))
-        (setq-local scroll-margin 0))
+      (progn
+        (unless coterm--char-old-scroll-margin
+          (setq coterm--char-old-scroll-margin
+                (cons scroll-margin
+                      (local-variable-p 'scroll-margin)))
+          (setq-local scroll-margin 0))
+        (add-hook 'coterm-t-after-insert-hook #'coterm--scroll-snap nil t))
     (when-let ((margin coterm--char-old-scroll-margin))
       (setq coterm--char-old-scroll-margin nil)
       (if (cdr margin)
           (setq scroll-margin (car margin))
-        (kill-local-variable 'scroll-margin)))))
+        (kill-local-variable 'scroll-margin)))
+    (remove-hook 'coterm-t-after-insert-hook #'coterm--scroll-snap t)))
+
+(defun coterm--scroll-snap ()
+  (let* ((buf (current-buffer))
+         (pmark (process-mark (get-buffer-process buf)))
+         (sel-win (selected-window))
+         (w sel-win))
+    ;; Avoid infinite loop in strange case where minibuffer window
+    ;; is selected but not active.
+    (while (window-minibuffer-p w)
+      (setq w (next-window w nil t)))
+    (while
+        (progn
+          (when (and (eq buf (window-buffer w))
+                     ;; Only snap if point is on pmark
+                     (= (window-point w) pmark))
+            (if (eq sel-win w)
+                (progn
+                  (coterm--t-goto 0 0)
+                  (recenter 0)
+                  (goto-char pmark))
+              (with-selected-window w
+                (coterm--t-goto 0 0)
+                (recenter 0)
+                (goto-char pmark))))
+          (setq w (next-window w nil t))
+          (not (eq w sel-win))))))
 
 ;;; Terminal emulation
 
@@ -177,6 +206,9 @@ In sync with variables `coterm--t-home-marker',
 (defvar-local coterm--t-saved-cursor nil)
 (defvar-local coterm--t-insert-mode nil)
 (defvar-local coterm--t-unhandled-fragment nil)
+
+(defvar coterm-t-after-insert-hook nil
+  "Hook run after inserting process output.")
 
 (defun coterm--comint-strip-CR (_)
   "Remove all \\r characters from last output."
@@ -690,14 +722,7 @@ If `coterm--t-home-marker' is nil, initialize it sensibly."
             (goto-char pmark)
             (skip-chars-forward " \n")
             (when (eobp)
-              (delete-region pmark (point)))
-
-            ;; Scroll window, but only if selected and if point is on pmark
-            (when (and coterm-scroll-snap-mode
-                       (= restore-point pmark)
-                       (eq buf (window-buffer (selected-window))))
-              (coterm--t-goto 0 0)
-              (recenter 0)))
+              (delete-region pmark (point))))
 
           ;; Restore point (this restores it only for the selected window)
           (goto-char restore-point)
@@ -717,7 +742,9 @@ If `coterm--t-home-marker' is nil, initialize it sensibly."
                    (= (window-point w) old-pmark)
                    (set-window-point w pmark))
               (setq w (next-window w nil t)))
-            (set-marker old-pmark nil)))))))
+            (set-marker old-pmark nil))
+
+          (run-hooks 'coterm-t-after-insert-hook))))))
 
 (provide 'coterm)
 ;;; coterm.el ends here
