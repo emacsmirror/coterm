@@ -184,7 +184,11 @@ If it is disabled, enable `coterm-auto-char-mode'."
 (define-minor-mode coterm-auto-char-mode
   "Whether we should enter or leave char mode automatically.
 If enabled, `coterm-auto-char-functions' are consulted to set
-`coterm-char-mode' and `coterm-scroll-snap-mode' automatically."
+`coterm-char-mode' and `coterm-scroll-snap-mode' automatically.
+
+By default, functions in `coterm-auto-char-functions' try to
+guess which mode is appropriate based on various heuristics.  See
+their doc strings for more information."
   :lighter ""
   (if coterm-auto-char-mode
       (progn
@@ -232,6 +236,7 @@ If point is not on process mark, leave `coterm-char-mode' and
       (when coterm-scroll-snap-mode (coterm-scroll-snap-mode -1)))))
 
 (defun coterm--auto-char-less-prompt ()
+  "Enter `coterm-char-mode' if a \"less\" prompt is detected."
   (when (eobp)
     (let ((opoint (point)))
       (forward-line 0)
@@ -252,18 +257,28 @@ If point is not on process mark, leave `coterm-char-mode' and
         (goto-char opoint)))))
 
 (defun coterm--auto-char-mpv-prompt ()
+  "Enter `coterm-char-mode' if a mpv prompt is detected.
+However, simply entering it isn't satisfactory, because mpv often
+erases its status prompt for brief periods of time before
+redrawing it again.  Because we don't want to leave char mode for
+these brief periods, we temporarily modify
+`coterm-auto-char-functions' such that `coterm-char-mode' is kept
+active if these status prompt erasures are detected."
   (when (coterm--auto-char-mpv-prompt-1)
-    ;; (unless coterm-char-mode (coterm-char-mode 1))
-    ;; (when coterm-scroll-snap-mode (coterm-scroll-snap-mode -1))
     (coterm-char-mode 1)
     (cl-labels
         ((hook ()
            (or (coterm--auto-char-mpv-prompt-1)
+               ;; If we are on the last lane and this line is empty, it is
+               ;; likely because mpv has erased its status buffer for a brief
+               ;; period before redrawing it.
                (and (eobp) (bolp))
                (ignore (rem-hook))))
          (rem-hook ()
            (remove-hook 'coterm-auto-char-functions #'hook t)
-           (remove-hook 'coterm-auto-char-mode-hook #'rem-hook t)))
+           (remove-hook 'coterm-auto-char-mode-hook #'rem-hook t)
+           (remove-hook 'coterm-char-mode-hook #'rem-hook t)
+           (remove-hook 'coterm-scroll-snap-mode-hook #'rem-hook t)))
       (add-hook 'coterm-auto-char-functions #'hook nil t)
       (add-hook 'coterm-auto-char-mode-hook #'rem-hook nil t)
       (add-hook 'coterm-char-mode-hook #'rem-hook nil t)
@@ -288,9 +303,13 @@ If point is not on process mark, leave `coterm-char-mode' and
         (goto-char opoint)))))
 
 (defun coterm--auto-char-not-eob ()
+  "Enter `coterm-char-mode' if a full-screen TUI program is detected.
+We assume that if the cursor moves more than 9 lines above the
+bottom row, a full-screen program is likely being drawn.  In this
+case, enter `coterm-char-mode' and `coterm-scroll-snap-mode' and
+temporarily modify `coterm-auto-char-functions' such that we will
+only leave these modes once cursor moves to the bottom line."
   (when (looking-at "\\(?:.*\n\\)\\{9,\\}")
-    ;; (unless coterm-char-mode (coterm-char-mode 1))
-    ;; (unless coterm-scroll-snap-mode (coterm-scroll-snap-mode 1))
     (coterm-char-mode 1)
     (coterm-scroll-snap-mode 1)
     (cl-labels
@@ -299,7 +318,9 @@ If point is not on process mark, leave `coterm-char-mode' and
                (ignore (rem-hook))))
          (rem-hook ()
            (remove-hook 'coterm-auto-char-functions #'hook t)
-           (remove-hook 'coterm-auto-char-mode-hook #'rem-hook t)))
+           (remove-hook 'coterm-auto-char-mode-hook #'rem-hook t)
+           (remove-hook 'coterm-char-mode-hook #'rem-hook t)
+           (remove-hook 'coterm-scroll-snap-mode-hook #'rem-hook t)))
       (add-hook 'coterm-auto-char-functions #'hook nil t)
       (add-hook 'coterm-auto-char-mode-hook #'rem-hook nil t)
       (add-hook 'coterm-char-mode-hook #'rem-hook nil t)
