@@ -83,7 +83,7 @@ variables `coterm-term-name' and `coterm-termcap-format'."
 if [ $1 = .. ]; then shift; fi; exec \"$@\"" null-device)
                        ".." command switches))))
 
-    (remove-hook 'comint-exec-hook #'coterm--init)
+    (remove-hook 'comint-mode-hook #'coterm--init)
     (setq coterm-term-environment-function #'comint-term-environment)
     (setq coterm-start-process-function #'start-file-process)))
 
