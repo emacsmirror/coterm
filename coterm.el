@@ -103,7 +103,7 @@ active, which inherits from `term-raw-map'.  In this map, each
 character is sent to the process, except for the escape
 character (usually C-c).  You can set `term-escape-char' to
 customize it."
-  :lighter " CHAR")
+  :lighter "")
 
 (defvar coterm--char-old-scroll-margin nil)
 
@@ -171,14 +171,13 @@ If it is disabled, enable `coterm-auto-char-mode'."
   (interactive)
   (cond
    (coterm-auto-char-mode
-    ;; Interactively to show the message.
-    (funcall-interactively #'coterm-auto-char-mode -1)
+    (coterm-auto-char-mode -1)
     (coterm-char-mode 1)
     (coterm-scroll-snap-mode 1))
    (coterm-char-mode
     (coterm-char-mode -1)
     (coterm-scroll-snap-mode -1))
-   (t (funcall-interactively #'coterm-auto-char-mode 1))))
+   (t (coterm-auto-char-mode 1))))
 
 ;;;; Automatic entry to char mode
 
@@ -186,7 +185,7 @@ If it is disabled, enable `coterm-auto-char-mode'."
   "Whether we should enter or leave char mode automatically.
 If enabled, `coterm-auto-char-functions' are consulted to set
 `coterm-char-mode' and `coterm-scroll-snap-mode' automatically."
-  :global nil
+  :lighter ""
   (if coterm-auto-char-mode
       (progn
         (add-hook 'coterm-t-after-insert-hook #'coterm--auto-char nil t)
@@ -194,6 +193,14 @@ If enabled, `coterm-auto-char-functions' are consulted to set
         (coterm--auto-char))
     (remove-hook 'coterm-t-after-insert-hook #'coterm--auto-char t)
     (remove-hook 'post-command-hook #'coterm--auto-char t)))
+
+(defvar coterm-auto-char-lighter-mode-format
+  '(coterm-char-mode (coterm-auto-char-mode " AChar" " Char")
+                     (coterm-auto-char-mode "" " Line")))
+
+(define-minor-mode coterm-auto-char-lighter-mode
+  "Show current char mode status in modeline."
+  :lighter coterm-auto-char-lighter-mode-format)
 
 (defvar coterm-auto-char-functions
   (list #'coterm--auto-char-less-prompt
@@ -397,6 +404,7 @@ In sync with variables `coterm--t-home-marker',
     (setq-local comint-inhibit-carriage-motion t)
     (add-hook 'comint-output-filter-functions #'coterm--comint-strip-CR nil t)
     (coterm-auto-char-mode)
+    (coterm-auto-char-lighter-mode)
 
     (add-function :filter-return
                   (local 'window-adjust-process-window-size-function)
