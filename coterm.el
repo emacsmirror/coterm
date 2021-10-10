@@ -229,7 +229,7 @@ In sync with variables `coterm--t-home-marker',
     (setq coterm--t-scroll-end coterm--t-height)
 
     (setq-local comint-inhibit-carriage-motion t)
-    (add-hook 'comint-output-filter-functions #'coterm--comint-strip-CR)
+    (add-hook 'comint-output-filter-functions #'coterm--comint-strip-CR nil t)
 
     (add-function :filter-return
                   (local 'window-adjust-process-window-size-function)
