@@ -322,12 +322,13 @@ is the process mark."
   ;; Differences from `term-control-seq-regexp':
   ;; Removed: \t, \032 (\C-z)
   ;; Added: OSC sequence \e] ... ; ... \e\\ (or \a)
+  ;; Added: sequences \e= and \e>
   (concat
    ;; A control character,
    "\\(?:[\n\000\007\b\016\017]\\|\r\n?\\|"
    ;; a C1 escape coded character (see [ECMA-48] section 5.3 "Elements
    ;; of the C1 set"),
-   "\e\\(?:[DM78c]\\|"
+   "\e\\(?:[DM78c=>]\\|"
    ;; Emacs specific control sequence from term.el.  In coterm, we simply
    ;; ignore them.
    "AnSiT[^\n]+\n\\|"
@@ -734,6 +735,8 @@ buffer and the scrolling region must cover the whole screen."
                        (setq coterm--t-insert-mode nil))
                    (?\] (pass-through)) ;; OSC sequence, handled by comint
                    (?A (ins)) ;; Ignore term.el specific \eAnSiT sequences
+                   ;; mpv outputs sequences \E= and \E>.  Ignore them
+                   ((or ?= ?>) (ins))
                    (?\[
                     (pcase (aref string (1- ctl-end))
                       (?m ;; Let `comint-output-filter-functions' handle this
