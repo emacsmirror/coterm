@@ -1,6 +1,8 @@
 ;;; coterm.el --- Terminal emulation for comint -*- lexical-binding: t; -*-
 
 (require 'term)
+(eval-when-compile
+  (require 'cl-lib))
 
 ;;; Mode functions and configuration
 
@@ -85,13 +87,13 @@ if [ $1 = .. ]; then shift; fi; exec \"$@\"" null-device)
     (setq coterm-term-environment-function #'comint-term-environment)
     (setq coterm-start-process-function #'start-file-process)))
 
-;;; Raw mode
+;;; Char mode
 
 (defvar coterm-char-mode-map
   (let ((map (make-sparse-keymap)))
     (set-keymap-parent map term-raw-map)
-    (define-key map [remap term-char-mode] #'coterm-char-mode)
-    (define-key map [remap term-line-mode] #'coterm-char-mode)
+    (define-key map [remap term-char-mode] #'coterm-char-mode-cycle)
+    (define-key map [remap term-line-mode] #'coterm-char-mode-cycle)
     map))
 
 (define-minor-mode coterm-char-mode
@@ -107,8 +109,7 @@ customize it."
 
 (define-minor-mode coterm-scroll-snap-mode
   "Keep scroll synchronized.
-Usually enabled for full-screen terminal programs to keep them on
-screen."
+Useful for full-screen terminal programs to keep them on screen."
   :keymap nil
   (if coterm-scroll-snap-mode
       (progn
@@ -117,7 +118,8 @@ screen."
                 (cons scroll-margin
                       (local-variable-p 'scroll-margin)))
           (setq-local scroll-margin 0))
-        (add-hook 'coterm-t-after-insert-hook #'coterm--scroll-snap nil t))
+        (add-hook 'coterm-t-after-insert-hook #'coterm--scroll-snap 'append t)
+        (coterm--scroll-snap))
     (when-let ((margin coterm--char-old-scroll-margin))
       (setq coterm--char-old-scroll-margin nil)
       (if (cdr margin)
@@ -126,30 +128,193 @@ screen."
     (remove-hook 'coterm-t-after-insert-hook #'coterm--scroll-snap t)))
 
 (defun coterm--scroll-snap ()
-  (let* ((buf (current-buffer))
-         (pmark (process-mark (get-buffer-process buf)))
-         (sel-win (selected-window))
-         (w sel-win))
-    ;; Avoid infinite loop in strange case where minibuffer window
-    ;; is selected but not active.
-    (while (window-minibuffer-p w)
-      (setq w (next-window w nil t)))
-    (while
-        (progn
-          (when (and (eq buf (window-buffer w))
-                     ;; Only snap if point is on pmark
-                     (= (window-point w) pmark))
-            (if (eq sel-win w)
-                (progn
+  ;; We need to check for `coterm-scroll-snap-mode' because a function in
+  ;; `coterm-t-after-insert-hook' might have changed it
+  (when coterm-scroll-snap-mode
+    (let* ((buf (current-buffer))
+           (pmark (process-mark (get-buffer-process buf)))
+           (sel-win (selected-window))
+           (w sel-win))
+      ;; Avoid infinite loop in strange case where minibuffer window
+      ;; is selected but not active.
+      (while (window-minibuffer-p w)
+        (setq w (next-window w nil t)))
+      (while
+          (progn
+            (when (and (eq buf (window-buffer w))
+                       ;; Only snap if point is on pmark
+                       (= (window-point w) pmark))
+              (if (eq sel-win w)
+                  (progn
+                    (coterm--t-goto 0 0)
+                    (recenter 0)
+                    (goto-char pmark))
+                (with-selected-window w
                   (coterm--t-goto 0 0)
                   (recenter 0)
-                  (goto-char pmark))
-              (with-selected-window w
-                (coterm--t-goto 0 0)
-                (recenter 0)
-                (goto-char pmark))))
-          (setq w (next-window w nil t))
-          (not (eq w sel-win))))))
+                  (goto-char pmark))))
+            (setq w (next-window w nil t))
+            (not (eq w sel-win)))))))
+
+(defvar coterm-auto-char-mode)
+
+(defun coterm-char-mode-cycle ()
+  "Cycle between char mode on, off and auto.
+
+If `coterm-auto-char-mode' is enabled, disable it and enable
+both `coterm-char-mode' and `coterm-scroll-snap-mode'.
+
+If `coterm-char-mode' is enabled, disable it along with
+`coterm-scroll-snap-mode'.
+
+If it is disabled, enable `coterm-auto-char-mode'."
+  (interactive)
+  (cond
+   (coterm-auto-char-mode
+    ;; Interactively to show the message.
+    (funcall-interactively #'coterm-auto-char-mode -1)
+    (coterm-char-mode 1)
+    (coterm-scroll-snap-mode 1))
+   (coterm-char-mode
+    (coterm-char-mode -1)
+    (coterm-scroll-snap-mode -1))
+   (t (funcall-interactively #'coterm-auto-char-mode 1))))
+
+;;;; Automatic entry to char mode
+
+(define-minor-mode coterm-auto-char-mode
+  "Whether we should enter or leave char mode automatically.
+If enabled, `coterm-auto-char-functions' are consulted to set
+`coterm-char-mode' and `coterm-scroll-snap-mode' automatically."
+  :global nil
+  (if coterm-auto-char-mode
+      (progn
+        (add-hook 'coterm-t-after-insert-hook #'coterm--auto-char nil t)
+        (add-hook 'post-command-hook #'coterm--auto-char nil t)
+        (coterm--auto-char))
+    (remove-hook 'coterm-t-after-insert-hook #'coterm--auto-char t)
+    (remove-hook 'post-command-hook #'coterm--auto-char t)))
+
+(defvar coterm-auto-char-functions
+  (list #'coterm--auto-char-less-prompt
+        #'coterm--auto-char-mpv-prompt
+        #'coterm--auto-char-not-eob
+        #'coterm--auto-char-leave-both)
+  "Abnormal hook to enter or leave `coterm-char-mode'.
+This hook is run after every command and process output, if
+`coterm-auto-char-mode' enabled.  It is only called if point is
+on process's mark.
+
+Each function is called with zero argumets and with `point-max'
+on the end of process output until one returns non-nil.")
+
+(defun coterm--auto-char ()
+  "Automatically enter or leave `coterm-char-mode'.
+If point is not on process mark, leave `coterm-char-mode' and
+`coterm-scroll-snap-mode'.  Otherwise, call functions from
+`coterm-auto-char-functions' until one returns non-nil."
+  (let* ((proc (get-buffer-process (current-buffer)))
+         (pmark (and proc (process-mark proc)))
+         (opoint))
+    (if (and pmark (= (setq opoint (point)) pmark))
+        (save-restriction
+          (coterm--narrow-to-process-output pmark)
+          (goto-char opoint)
+          (run-hook-with-args-until-success 'coterm-auto-char-functions))
+      (when coterm-char-mode (coterm-char-mode -1))
+      (when coterm-scroll-snap-mode (coterm-scroll-snap-mode -1)))))
+
+(defun coterm--auto-char-less-prompt ()
+  (when (eobp)
+    (let ((opoint (point)))
+      (forward-line 0)
+      (prog1
+          (and
+           (looking-at
+            (concat
+             ":\\|"
+             "(END)\\|"
+             "byte [0-9]+\\|"
+             "100%\\|"
+             "\\(?:[^\n]* \\)?" "[0-9]?[0-9]%\\|"
+             "[^\n]*(press h for help or q to quit)"))
+           (when (= opoint (match-end 0))
+             (unless coterm-char-mode (coterm-char-mode 1))
+             (unless coterm-scroll-snap-mode (coterm-scroll-snap-mode 1))
+             t))
+        (goto-char opoint)))))
+
+(defun coterm--auto-char-mpv-prompt ()
+  (when (coterm--auto-char-mpv-prompt-1)
+    ;; (unless coterm-char-mode (coterm-char-mode 1))
+    ;; (when coterm-scroll-snap-mode (coterm-scroll-snap-mode -1))
+    (coterm-char-mode 1)
+    (cl-labels
+        ((hook ()
+           (or (coterm--auto-char-mpv-prompt-1)
+               (and (eobp) (bolp))
+               (ignore (rem-hook))))
+         (rem-hook ()
+           (remove-hook 'coterm-auto-char-functions #'hook t)
+           (remove-hook 'coterm-auto-char-mode-hook #'rem-hook t)))
+      (add-hook 'coterm-auto-char-functions #'hook nil t)
+      (add-hook 'coterm-auto-char-mode-hook #'rem-hook nil t)
+      (add-hook 'coterm-char-mode-hook #'rem-hook nil t)
+      (add-hook 'coterm-scroll-snap-mode-hook #'rem-hook nil t))
+    t))
+
+(defun coterm--auto-char-mpv-prompt-1 ()
+  "Return t if mpv is likely running."
+  (when (bolp)
+    (let ((opoint (point)))
+      (forward-line -1)
+      (prog1 (looking-at
+              (concat "\\(?:[^\n]*\n\\)?"
+                      "AV?: "
+                      "[0-9][0-9]:[0-9][0-9]:[0-9][0-9] / "
+                      "[0-9][0-9]:[0-9][0-9]:[0-9][0-9] "
+                      "([0-9]?[0-9]%)"
+                      "\\(?:"
+                      "\n\\[-*\\+-*\\]"
+                      "\\)?"
+                      "\\'"))
+        (goto-char opoint)))))
+
+(defun coterm--auto-char-not-eob ()
+  (when (looking-at "\\(?:.*\n\\)\\{9,\\}")
+    ;; (unless coterm-char-mode (coterm-char-mode 1))
+    ;; (unless coterm-scroll-snap-mode (coterm-scroll-snap-mode 1))
+    (coterm-char-mode 1)
+    (coterm-scroll-snap-mode 1)
+    (cl-labels
+        ((hook ()
+           (or (looking-at ".*\n.")
+               (ignore (rem-hook))))
+         (rem-hook ()
+           (remove-hook 'coterm-auto-char-functions #'hook t)
+           (remove-hook 'coterm-auto-char-mode-hook #'rem-hook t)))
+      (add-hook 'coterm-auto-char-functions #'hook nil t)
+      (add-hook 'coterm-auto-char-mode-hook #'rem-hook nil t)
+      (add-hook 'coterm-char-mode-hook #'rem-hook nil t)
+      (add-hook 'coterm-scroll-snap-mode-hook #'rem-hook nil t))
+    t))
+
+(defun coterm--auto-char-leave-both ()
+  (when coterm-char-mode (coterm-char-mode -1))
+  (when coterm-scroll-snap-mode (coterm-scroll-snap-mode -1))
+  t)
+
+(defun coterm--narrow-to-process-output (pmark)
+  "Narrow to process output and move point to the end of it.
+If there is no user input at end of buffer, simply widen.  PMARK
+is the process mark."
+  (widen)
+  (unless (eq (get-char-property (max 1 (1- (point-max))) 'field)
+              'output)
+    (goto-char (point-max))
+    (text-property-search-backward 'field 'output)
+    (when (<= pmark (point))
+      (narrow-to-region (point-min) (point)))))
 
 ;;; Terminal emulation
 
@@ -230,6 +395,7 @@ In sync with variables `coterm--t-home-marker',
 
     (setq-local comint-inhibit-carriage-motion t)
     (add-hook 'comint-output-filter-functions #'coterm--comint-strip-CR nil t)
+    (coterm-auto-char-mode)
 
     (add-function :filter-return
                   (local 'window-adjust-process-window-size-function)
@@ -499,16 +665,7 @@ buffer and the scrolling region must cover the whole screen."
           (setq old-pmark (copy-marker pmark window-point-insertion-type))
           (coterm--t-adjust-from-pmark pmark)
           (save-restriction
-            (widen)
-            (goto-char (point-max))
-            ;; Use narrowing to prevent modification of user input at end of
-            ;; buffer
-            (unless (eq (get-char-property (max 1 (1- (point-max))) 'field)
-                        'output)
-              (goto-char (point-max))
-              (text-property-search-backward 'field 'output)
-              (when (<= pmark (point))
-                (narrow-to-region (point-min) (point))))
+            (coterm--narrow-to-process-output pmark)
 
             (while (setq match (string-match coterm--t-control-seq-regexp
                                              string ctl-end))
