@@ -1,5 +1,67 @@
 ;;; coterm.el --- Terminal emulation for comint -*- lexical-binding: t; -*-
 
+;; Filename: coterm.el
+;; Description: Terminal emulation for comint
+;; Author: jakanakaevangeli <jakanakaevangeli@chiru.no>
+;; Created: 2021-10-10
+;; Version 1.0
+;; URL: https://repo.or.cz/emacs-coterm.git
+
+;; This file is not part of GNU Emacs.
+
+;; This program is free software: you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+;;; Commentary
+
+;; If the global `coterm-mode' is enabled, proper terminal emulation will be
+;; supported for all newly spawned comint processes.  This allows you to use
+;; more complex console programs such as "less" and "mpv" and full-screen TUI
+;; programs such as "vi", "top", "htop" or even "emacs -nw".
+;;
+;; In addition to that, the following two local minor modes may be used:
+;;
+;; `coterm-char-mode': If enabled, most characters you type are sent directly
+;; to the subprocess, which is useful for interacting with full-screen TUI
+;; programs.
+;;
+;; `coterm-auto-char-mode' If enabled, coterm will enter and leave
+;; `coterm-char-mode' automatically as appropriate.  For example, if you
+;; execute "less" in a shell buffer, coterm will detect that "less" is running
+;; and automatically enable char mode so that you can interact with less
+;; normally.  Once you leave the "less" program, coterm will cisable char mode
+;; so that you can interact with your shell in the normal comint way.  This
+;; mode is enabled by default in all coterm comint buffers.
+;;
+;; Automatic entrance into char mode is indicated by "AChar" in the modeline.
+;; Non-automatic entrance into char mode is indicated by "Char".
+;; Automatic exit of char mode is indicated by no text in the modeline.
+;; Non-automatic exit of char mode is indicated by "Line".
+;;
+;; The command `coterm-char-mode-cycle' is a handy command to cycle between
+;; automatic char-mode, char-mode enabled and char-mode disabled.
+;;
+;; Installation:
+;;
+;; Add the following to your Emacs init file:
+;;
+;;  (add-to-list 'load-path "/path/to/emacs-coterm")
+;;  (require 'coterm)
+;;  (coterm-mode)
+;;  ;; Optional: bind `coterm-char-mode-cycle' to C-; in comint
+;;  (with-eval-after-load 'comint
+;;    (define-key comint-mode-map (kbd "C-;") #'coterm-char-mode-cycle))
+
 (require 'term)
 (eval-when-compile
   (require 'cl-lib))
@@ -646,7 +708,7 @@ non-whitespace text."
 (defun coterm--t-insert (proc-filt process str newlines)
   "Insert STR using PROC-FILT and PROCESS.
 Synchronise PROCESS's mark beforehand and insert at its position.
-NEWLINES is the number of newlines STR contains. Unless it is
+NEWLINES is the number of newlines STR contains.  Unless it is
 zero, insertion must happen at the end of accessible portion of
 buffer and the scrolling region must cover the whole screen."
   (coterm--t-adjust-pmark proc-filt process)
