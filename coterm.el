@@ -378,12 +378,16 @@ is the process mark."
 
 (defconst coterm--t-control-seq-regexp
   ;; Differences from `term-control-seq-regexp':
-  ;; Removed: \t, \032 (\C-z)
+  ;;
+  ;; For optimization, we try matching "\r\n" as whole, if possible, instead of
+  ;; \r and \n separately
+  ;;
+  ;; Removed: \032 (\C-z)
   ;; Added: OSC sequence \e] ... ; ... \e\\ (or \a)
   ;; Added: sequences \e= and \e>
   (concat
    ;; A control character,
-   "\\(?:[\n\000\007\b\016\017]\\|\r\n?\\|"
+   "\\(?:[\n\000\007\t\b\016\017]\\|\r\n?\\|"
    ;; a C1 escape coded character (see [ECMA-48] section 5.3 "Elements
    ;; of the C1 set"),
    "\e\\(?:[DM78c=>]\\|"
@@ -754,6 +758,20 @@ buffer and the scrolling region must cover the whole screen."
                 (?\r (ins) ;; (terminfo: cr)
                      (setq coterm--t-col 0)
                      (dirty))
+                ;; TAB (terminfo: ht)
+                ((and ?\t
+                      (guard coterm--t-pmark-in-sync)
+                      (guard (= pmark (point-max)))
+                      (guard (not (coterm--t-scroll-by-deletion-p))))
+                 ;; Insert a TAB as is, if at eob
+                 (pass-through))
+                (?\t
+                 ;; Otherwise, move point to the next tab stop
+                 (ins)
+                 (setq coterm--t-col
+                       (min (1- coterm--t-width)
+                            (+ coterm--t-col 8 (- (mod coterm--t-col 8)))))
+                 (dirty))
                 (?\b (ins) ;; (terminfo: cub1)
                      (setq coterm--t-col (max (1- coterm--t-col) 0))
                      (dirty))
