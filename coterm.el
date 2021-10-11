@@ -293,7 +293,8 @@ active if these status prompt erasures are detected."
       (forward-line -1)
       (prog1 (looking-at
               (concat "\\(?:.*\n\\)?"
-                      "A?V?: "
+                      "\\(?:(Paused) \\)?"
+                      "\\(?:[AV]\\|AV\\): "
                       "[0-9][0-9]:[0-9][0-9]:[0-9][0-9] / "
                       "[0-9][0-9]:[0-9][0-9]:[0-9][0-9] "
                       "([0-9]?[0-9]%).*"
