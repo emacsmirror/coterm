@@ -861,8 +861,7 @@ buffer and the scrolling region must cover the whole screen."
                           (dirty))
                          ;; \E[J - clear to end of screen (terminfo: ed, clear)
                          ((and ?J (guard (eq 0 (car ctl-params))))
-                          (coterm--t-delete-region coterm--t-row coterm--t-col)
-                          (dirty))
+                          (coterm--t-delete-region coterm--t-row coterm--t-col))
                          ((and ?J (guard (eq 1 (car ctl-params))))
                           (coterm--t-delete-region 0 0 coterm--t-row
                                                    coterm--t-col)
