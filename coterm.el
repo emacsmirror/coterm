@@ -519,12 +519,22 @@ region."
                  (if row2
                      (progn (coterm--t-goto row2 col2) (point))
                    (point-max)))
-  (when (eolp)
-    (let ((opoint (point)))
-      (skip-chars-backward " ") (delete-region (point) opoint)))
-  (when (eobp)
-    (let ((opoint (point)))
-      (skip-chars-backward "\n") (delete-region (point) opoint)))
+  ;; Delete resulting trailing whitespace.  This may move the home marker under
+  ;; some circumstances ((coterm--t-delete-region 0 0), for example), so adjust
+  ;; it afterwards.
+  (let* ((home coterm--t-home-marker)
+         (old-home (marker-position home)))
+    (when (eolp)
+      (let ((opoint (point)))
+        (skip-chars-backward " ") (delete-region (point) opoint)))
+    (when (eobp)
+      (let ((opoint (point)))
+        (skip-chars-backward "\n") (delete-region (point) opoint)))
+    (unless (= old-home home)
+      (cl-incf coterm--t-home-offset (- old-home home))
+      (goto-char home)
+      (forward-line 0)
+      (set-marker home (point))))
   (setq coterm--t-pmark-in-sync nil))
 
 (defun coterm--t-open-space (proc-filt process newlines spaces)
