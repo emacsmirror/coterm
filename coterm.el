@@ -236,26 +236,54 @@ If point is not on process mark, leave `coterm-char-mode' and
       (when coterm-scroll-snap-mode (coterm-scroll-snap-mode -1)))))
 
 (defun coterm--auto-char-less-prompt ()
-  "Enter `coterm-char-mode' if a \"less\" prompt is detected."
-  (when (eobp)
-    (let ((opoint (point)))
-      (forward-line 0)
-      (prog1
-          (when (looking-at
-                 (concat
-                  "\\(?:"
-                  ":\\|"
-                  "(END)\\|"
-                  "byte [0-9]+\\|"
-                  "100%\\|"
-                  "\\(?:.* \\)?" "[0-9]?[0-9]%\\|"
-                  ".*(press h for help or q to quit)\\|"
-                  ".*(press RETURN)"
-                  "\\)\\'"))
-            (unless coterm-char-mode (coterm-char-mode 1))
-            (unless coterm-scroll-snap-mode (coterm-scroll-snap-mode 1))
-            t)
-        (goto-char opoint)))))
+  "Enter `coterm-char-mode' if a \"less\" prompt is detected.
+In addition, temporarily modify `coterm-auto-char-functions' such
+that char mode is maintained even if the user presses \"/\",
+\":\", \"ESC\" or \"-\"."
+  (when (and (eobp) (coterm--auto-char-less-prompt-1))
+    (unless coterm-char-mode (coterm-char-mode 1))
+    (unless coterm-scroll-snap-mode (coterm-scroll-snap-mode 1))
+    (cl-labels
+        ((hook ()
+           (if (not (eobp))
+               (rem-hook)
+             (or
+              (coterm--auto-char-less-prompt-1)
+              (progn
+                (forward-line 0)
+                (prog1 (looking-at (concat
+                                    "\\(?: ESC\\| :\\|-\\)\\'\\|"
+                                    "Examine: \\|/"))
+                  (goto-char (point-max))))
+              (rem-hook))))
+         (rem-hook ()
+           (remove-hook 'coterm-auto-char-functions #'hook t)
+           (remove-hook 'coterm-auto-char-mode-hook #'rem-hook t)
+           (remove-hook 'coterm-char-mode-hook #'rem-hook t)
+           (remove-hook 'coterm-scroll-snap-mode-hook #'rem-hook t)
+           nil))
+      (add-hook 'coterm-auto-char-functions #'hook nil t)
+      (add-hook 'coterm-auto-char-mode-hook #'rem-hook nil t)
+      (add-hook 'coterm-char-mode-hook #'rem-hook nil t)
+      (add-hook 'coterm-scroll-snap-mode-hook #'rem-hook nil t))
+    t))
+
+(defun coterm--auto-char-less-prompt-1 ()
+  "Return t if point is after a less prompt."
+  (let ((opoint (point)))
+    (forward-line 0)
+    (prog1 (looking-at
+            (concat
+             "\\(?:"
+             ":\\|"
+             "(END)\\|"
+             "byte [0-9]+\\|"
+             "100%\\|"
+             "\\(?:.* \\)?" "[0-9]?[0-9]%\\|"
+             ".*(press h for help or q to quit)\\|"
+             ".*(press RETURN)"
+             "\\)\\'"))
+      (goto-char opoint))))
 
 (defun coterm--auto-char-mpv-prompt ()
   "Enter `coterm-char-mode' if a mpv prompt is detected.
