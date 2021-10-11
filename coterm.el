@@ -105,7 +105,7 @@ character (usually C-c).  You can set `term-escape-char' to
 customize it."
   :lighter "")
 
-(defvar coterm--char-old-scroll-margin nil)
+(defvar-local coterm--char-old-scroll-margin nil)
 
 (define-minor-mode coterm-scroll-snap-mode
   "Keep scroll synchronized.
