@@ -1,10 +1,10 @@
 ;;; coterm.el --- Terminal emulation for comint -*- lexical-binding: t; -*-
 
 ;; Filename: coterm.el
-;; Description: Terminal emulation for comint
 ;; Author: jakanakaevangeli <jakanakaevangeli@chiru.no>
-;; Created: 2021-10-10
 ;; Version 1.0
+;; Keywords: processes
+;; Package-Requires: ((emacs "26.1"))
 ;; URL: https://repo.or.cz/emacs-coterm.git
 
 ;; This file is not part of GNU Emacs.
@@ -22,7 +22,7 @@
 ;; You should have received a copy of the GNU General Public License
 ;; along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-;;; Commentary
+;;; Commentary:
 
 ;; If the global `coterm-mode' is enabled, proper terminal emulation will be
 ;; supported for all newly spawned comint processes.  This allows you to use
@@ -75,6 +75,8 @@
 ;; functionality that we can now use TUI programs.  It is therefore good for
 ;; users who generally prefer comint to term.el but sometimes miss the superior
 ;; terminal emulation that term.el provides.
+
+;;; Code:
 
 (require 'term)
 (eval-when-compile
