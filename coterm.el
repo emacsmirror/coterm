@@ -438,12 +438,12 @@ only leave these modes once cursor moves to the bottom line."
 If there is no user input at end of buffer, simply widen.  PMARK
 is the process mark."
   (widen)
-  (unless (eq (get-char-property (max 1 (1- (point-max))) 'field)
-              'output)
-    (goto-char (point-max))
-    (text-property-search-backward 'field 'output)
-    (when (<= pmark (point))
-      (narrow-to-region (point-min) (point)))))
+  (unless comint-use-prompt-regexp
+    (unless (eq (get-char-property (max 1 (1- (point-max))) 'field)
+                'output)
+      (goto-char (point-max))
+      (text-property-search-backward 'field 'output)
+      (narrow-to-region (point-min) (max pmark (point))))))
 
 ;;; Terminal emulation
 
