@@ -147,12 +147,13 @@ variables `coterm-term-name' and `coterm-termcap-format'."
                   ret)))
         (setq coterm-start-process-function
               (lambda (name buffer command &rest switches)
-                (apply #'start-file-process name buffer
-                       ;; Adapted from `term-exec-1'
-                       "sh" "-c"
-                       (format "stty -nl sane -echo 2>%s;\
+                ;; Adapted from `term-exec-1'
+                (let ((inhibit-eol-conversion t))
+                  (apply #'start-file-process name buffer
+                         "sh" "-c"
+                         (format "stty -nl sane -echo 2>%s;\
 if [ $1 = .. ]; then shift; fi; exec \"$@\"" null-device)
-                       ".." command switches))))
+                         ".." command switches)))))
 
     (remove-hook 'comint-mode-hook #'coterm--init)
     (setq coterm-term-environment-function #'comint-term-environment)
