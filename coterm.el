@@ -598,7 +598,7 @@ Return non-nil if the position was actually reached."
   (and
    (zerop (forward-line
            (+ coterm--t-home-offset row)))
-   (not (eobp))
+   (bolp)
    (<= col (move-to-column col))))
 
 (defun coterm--t-apply-proc-filt (proc-filt process str)
