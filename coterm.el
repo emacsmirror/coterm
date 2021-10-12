@@ -835,6 +835,8 @@ buffer and the scrolling region must cover the whole screen."
           (setq restore-point (if (= (point) pmark) pmark (point-marker)))
           (setq old-pmark (copy-marker pmark window-point-insertion-type))
           (coterm--t-adjust-from-pmark pmark)
+          (setq coterm--t-pmark-in-sync t)
+
           (save-restriction
             (coterm--narrow-to-process-output pmark)
 
