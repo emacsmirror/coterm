@@ -332,6 +332,7 @@ that char mode is maintained even if the user presses \"/\",
            (if (not (eobp))
                (rem-hook)
              (or
+              (bolp)                    ; Empty last line if "less" is slow
               (coterm--auto-char-less-prompt-1)
               (progn
                 (forward-line 0)
