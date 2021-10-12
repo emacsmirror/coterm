@@ -497,7 +497,8 @@ is the process mark."
 ;; will follow suit and insert long lines unchanged.  However, this means that
 ;; terminal emulation isn't fully accurate for long lines.  Up to now, "less"
 ;; was the only program I've encountered that relies on accurate line wrapping,
-;; so a workaround aimed at "less" specifically was implemented.
+;; so a workaround aimed at "less" specifically was implemented (search for the
+;; term "less" in the function `coterm--t-emulate-terminal'.
 
 (defconst coterm--t-control-seq-regexp
   ;; Differences from `term-control-seq-regexp':
@@ -914,8 +915,15 @@ buffer and the scrolling region must cover the whole screen."
                                 (coterm--t-goto coterm--t-row coterm--t-col)
                                 (eq (char-before) ?\s))
                        ;; Awkward hack to make line-wrapping work in "less".
-                       ;; Very specific for the way "less" performs wrapping.
-                       ;; For all other cases, coterm does not support any
+                       ;; Very specific for the way "less" performs wrapping:
+                       ;; When reaching the end of line, instead of sending
+                       ;; "\r\n" to go to the start of the next line, it sends
+                       ;; " \b": a space which wraps to the next line in most
+                       ;; terminals and a backspace to move to the start of the
+                       ;; line.  Here we detect this and handle it like an
+                       ;; ordinary "\r\n".
+                       ;;
+                       ;; For all other cases, coterm does not perform any
                        ;; wrapping at all.
                        (delete-char -1)
                        (coterm--t-down-line proc-filt process)
