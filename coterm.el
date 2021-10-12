@@ -1,5 +1,7 @@
 ;;; coterm.el --- Terminal emulation for comint -*- lexical-binding: t; -*-
 
+;; Copyright (C) 2021  Free Software Foundation, Inc.
+
 ;; Filename: coterm.el
 ;; Author: jakanakaevangeli <jakanakaevangeli@chiru.no>
 ;; Version 1.0
@@ -7,7 +9,7 @@
 ;; Package-Requires: ((emacs "26.1"))
 ;; URL: https://repo.or.cz/emacs-coterm.git
 
-;; This file is not part of GNU Emacs.
+;; This file is part of GNU Emacs.
 
 ;; This program is free software: you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
