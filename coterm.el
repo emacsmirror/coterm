@@ -316,7 +316,7 @@ If point is not on process mark, leave `coterm-char-mode' and
   "Enter `coterm-char-mode' if a \"less\" prompt is detected.
 In addition, temporarily modify `coterm-auto-char-functions' such
 that char mode is maintained even if the user presses \"/\",
-\":\", \"ESC\" or \"-\"."
+\":\", \"ESC\", \"-\" or a digit."
   (when (and (eobp) (coterm--auto-char-less-prompt-1))
     (unless coterm-char-mode (coterm-char-mode 1))
     (unless coterm-scroll-snap-mode (coterm-scroll-snap-mode 1))
@@ -330,7 +330,7 @@ that char mode is maintained even if the user presses \"/\",
                 (forward-line 0)
                 (prog1 (looking-at (concat
                                     "\\(?: ESC\\| :\\|-\\)\\'\\|"
-                                    "Examine: \\|/"))
+                                    "Examine: \\|[/:]"))
                   (goto-char (point-max))))
               (rem-hook))))
          (rem-hook ()
