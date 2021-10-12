@@ -778,7 +778,7 @@ buffer and the scrolling region must cover the whole screen."
         (set-marker coterm--t-home-marker (point))
         (setq coterm--t-home-offset 0)
         (setq coterm--t-row (1- coterm--t-height))))
-    (setq coterm--t-col (min column (1- coterm--t-width)))))
+    (setq coterm--t-col column)))
 
 (defun coterm--t-adjust-from-pmark (pos)
   "Point `coterm--t-row' and `coterm--t-col' POS."
@@ -888,6 +888,20 @@ buffer and the scrolling region must cover the whole screen."
                             (+ coterm--t-col 8 (- (mod coterm--t-col 8)))))
                  (dirty))
                 (?\b (ins) ;; (terminfo: cub1)
+
+                     (when (and (= coterm--t-col (1+ coterm--t-width))
+                                (not (coterm--t-scroll-by-deletion-p))
+                                (coterm--t-goto coterm--t-row coterm--t-col)
+                                (eq (char-before) ?\s))
+                       ;; Awkward hack to make line-wrapping work in "less".
+                       ;; Very specific for the way "less" performs wrapping.
+                       ;; For all other cases, coterm does not support any
+                       ;; wrapping at all.
+                       (delete-char -1)
+                       (coterm--t-down-line proc-filt process)
+                       (setq coterm--t-col 0)
+                       (coterm--t-insert proc-filt process " " 0))
+
                      (setq coterm--t-col (max (1- coterm--t-col) 0))
                      (dirty))
                 (?\C-g (ins) ;; (terminfo: bel)
