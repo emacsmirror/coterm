@@ -39,7 +39,7 @@
 ;; `coterm-char-mode' automatically as appropriate.  For example, if you
 ;; execute "less" in a shell buffer, coterm will detect that "less" is running
 ;; and automatically enable char mode so that you can interact with less
-;; normally.  Once you leave the "less" program, coterm will cisable char mode
+;; normally.  Once you leave the "less" program, coterm will disable char mode
 ;; so that you can interact with your shell in the normal comint way.  This
 ;; mode is enabled by default in all coterm comint buffers.
 ;;
@@ -55,21 +55,26 @@
 ;;
 ;; Add the following to your Emacs init file:
 ;;
-;;  (add-to-list 'load-path "/path/to/emacs-coterm")
-;;  (require 'coterm)
-;;  (coterm-mode)
-;;  ;; Optional: bind `coterm-char-mode-cycle' to C-; in comint
-;;  (with-eval-after-load 'comint
-;;    (define-key comint-mode-map (kbd "C-;") #'coterm-char-mode-cycle))
+;;   (add-to-list 'load-path "/path/to/emacs-coterm")
+;;   (require 'coterm)
+;;   (coterm-mode)
+;;
+;;   ;; Optional: bind `coterm-char-mode-cycle' to C-; in comint
+;;   (with-eval-after-load 'comint
+;;     (define-key comint-mode-map (kbd "C-;") #'coterm-char-mode-cycle))
+;;
+;;   ;; If your process repeats what you have already typed, try customizing
+;;   ;; `comint-process-echoes':
+;;   ;;   (setq-default comint-process-echoes t)
 ;;
 ;;
 ;; Differences from M-x term:
 ;;
 ;; coterm is written as an upgrade to comint.  For existing comint users, the
-;; behaviour of comint doesn't change with coterm enabled comint except for the
-;; added functionality that we can now use TUI programs.  It is therefor good
-;; for users who generally prefer comint to term.el but sometimes miss the
-;; superior terminal emulation that term.el provides.
+;; behaviour of comint doesn't change with coterm enabled except for the added
+;; functionality that we can now use TUI programs.  It is therefore good for
+;; users who generally prefer comint to term.el but sometimes miss the superior
+;; terminal emulation that term.el provides.
 
 (require 'term)
 (eval-when-compile
@@ -876,7 +881,7 @@ buffer and the scrolling region must cover the whole screen."
                  ;; Insert a TAB as is, if at eob
                  (pass-through))
                 (?\t
-                 ;; Otherwise, move point to the next tab stop
+                 ;; Otherwise, move cursor to the next tab stop
                  (ins)
                  (setq coterm--t-col
                        (min (1- coterm--t-width)
