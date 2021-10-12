@@ -478,6 +478,22 @@ is the process mark."
 ;; position reachable, but inserting text after this whitespace means that it
 ;; isn't trailing or redundant (except if the inserted text consists of only
 ;; whitespace).
+;;
+;;
+;; Line wrapping:
+;;
+;; term.el wraps lines correctly and accurately.  When text is to be inserted
+;; at the right edge, term.el will first move the cursor to the beginning of
+;; the next line.
+;;
+;; The beauty of comint, on the other hand, is that it inserts long lines
+;; unchanged and leaves line wrapping up to Emacs.  One can easily use
+;; `toggle-truncate-lines' or even `word-wrap' to change display of long lines
+;; from compiler output for example.  That is why it was decided that coterm
+;; will follow suit and insert long lines unchanged.  However, this means that
+;; terminal emulation isn't fully accurate for long lines.  Up to now, "less"
+;; was the only program I've encountered that relies on accurate line wrapping,
+;; so a workaround aimed at "less" specifically was implemented.
 
 (defconst coterm--t-control-seq-regexp
   ;; Differences from `term-control-seq-regexp':
