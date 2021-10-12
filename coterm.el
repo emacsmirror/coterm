@@ -77,6 +77,9 @@
 ;; functionality that we can now use TUI programs.  It is therefore good for
 ;; users who generally prefer comint to term.el but sometimes miss the superior
 ;; terminal emulation that term.el provides.
+;;
+;; Coterm also provides `coterm-auto-char-mode' which aims to eliminate the
+;; need to manually enable and disable char mode.
 
 ;;; Code:
 
