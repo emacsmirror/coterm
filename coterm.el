@@ -831,6 +831,7 @@ buffer and the scrolling region must cover the whole screen."
   (let* ((pmark (process-mark process))
          (match 0)
          (will-insert-newlines 0)
+         (inhibit-read-only t)
          restore-point
          last-match-end
          old-pmark
