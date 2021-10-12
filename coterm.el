@@ -61,6 +61,15 @@
 ;;  ;; Optional: bind `coterm-char-mode-cycle' to C-; in comint
 ;;  (with-eval-after-load 'comint
 ;;    (define-key comint-mode-map (kbd "C-;") #'coterm-char-mode-cycle))
+;;
+;;
+;; Differences from M-x term:
+;;
+;; coterm is written as an upgrade to comint.  For existing comint users, the
+;; behaviour of comint doesn't change with coterm enabled comint except for the
+;; added functionality that we can now use TUI programs.  It is therefor good
+;; for users who generally prefer comint to term.el but sometimes miss the
+;; superior terminal emulation that term.el provides.
 
 (require 'term)
 (eval-when-compile
@@ -437,6 +446,32 @@ is the process mark."
       (narrow-to-region (point-min) (point)))))
 
 ;;; Terminal emulation
+
+;; This is essentially a re-implementation of term.el's terminal emulation.  I
+;; could have simply reused functions from term.el but that would have been
+;; unsatisfactory in my opinion.  That is mostly due to the fact that term.el's
+;; terminal emulation inserts a lot of redundant trailing whitespace end empty
+;; lines, which I believe is very distracting for ordinary comint usage.
+;;
+;; Terminal emulation is coordinate based, for example, "move cursor to row 11
+;; and column 21".  A coordinate position may not be reachable in an Emacs
+;; buffer because the specified line is currently too short or there aren't
+;; enough lines in the buffer.  term.el automatically inserts empty lines and
+;; spaces in order to move point to a specified coordinate position.  This
+;; results in trailing whitespace.
+;;
+;; coterm takes a different approach.  Instead of moving point, the current
+;; terminal cursor coordinates are kept in the variables `coterm--t-row' and
+;; `coterm--t-col'.  Moving the terminal cursor simply means adjusting these
+;; two variables, no whitespace needs to be inserted.  Point and process mark
+;; are usually not guaranteed to be anywhere near the current coordinate
+;; position and are only restored at the end of the main filter function
+;; `coterm--t-emulate-terminal'.  Only when terminal emulation requires
+;; insertion of actual text do we have to be able to reach the current cursor
+;; coordinates.  We may have to insert newlines and spaces to make this
+;; position reachable, but inserting text after this whitespace means that it
+;; isn't trailing or redundant (except if the inserted text consists of only
+;; whitespace).
 
 (defconst coterm--t-control-seq-regexp
   ;; Differences from `term-control-seq-regexp':
