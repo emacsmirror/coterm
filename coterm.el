@@ -80,6 +80,13 @@
 ;;
 ;; Coterm also provides `coterm-auto-char-mode' which aims to eliminate the
 ;; need to manually enable and disable char mode.
+;;
+;;
+;; Bugs, suggestions and patches can be sent to
+;;
+;;    bugs-doseganje (at) groups.io
+;;
+;; and can be viewed at https://groups.io/g/bugs-doseganje/topics
 
 ;;; Code:
 
