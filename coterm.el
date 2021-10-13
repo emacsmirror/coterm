@@ -308,12 +308,10 @@ If point is not on process mark, leave `coterm-char-mode' and
 `coterm-scroll-snap-mode'.  Otherwise, call functions from
 `coterm-auto-char-functions' until one returns non-nil."
   (let* ((proc (get-buffer-process (current-buffer)))
-         (pmark (and proc (process-mark proc)))
-         (opoint))
-    (if (and pmark (= (setq opoint (point)) pmark))
+         (pmark (and proc (process-mark proc))))
+    (if (and pmark (= (point) pmark))
         (save-restriction
           (coterm--narrow-to-process-output pmark)
-          (goto-char opoint)
           (run-hook-with-args-until-success 'coterm-auto-char-functions))
       (when coterm-char-mode (coterm-char-mode -1))
       (when coterm-scroll-snap-mode (coterm-scroll-snap-mode -1)))))
@@ -448,8 +446,8 @@ only leave these modes once cursor moves to the bottom line."
   t)
 
 (defun coterm--narrow-to-process-output (pmark)
-  "Narrow to process output and move point to the end of it.
-If there is no user input at end of buffer, simply widen.  PMARK
+  "Widen and narrow to process output.
+If there is no user input at end of buffer, simply widen. PMARK
 is the process mark."
   (widen)
   (unless comint-use-prompt-regexp
