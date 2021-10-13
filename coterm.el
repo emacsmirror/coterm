@@ -360,8 +360,9 @@ that char mode is maintained even if the user presses \"/\",
             (concat
              "\\(?:"
              ":\\|"
-             "(END)\\|"
+             "\\(?:.* \\)?" "(END)\\|"
              "byte [0-9]+\\|"
+             "lines [0-9]+-[0-9]+\\|"
              "100%\\|"
              "\\(?:.* \\)?" "[0-9]?[0-9]%\\|"
              ".*(press h for help or q to quit)\\|"
