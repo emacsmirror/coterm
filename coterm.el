@@ -455,9 +455,9 @@ is the process mark."
   (unless comint-use-prompt-regexp
     (unless (eq (get-char-property (max 1 (1- (point-max))) 'field)
                 'output)
-      (goto-char (point-max))
-      (text-property-search-backward 'field 'output)
-      (narrow-to-region (point-min) (max pmark (point))))))
+      (narrow-to-region
+       (point-min)
+       (previous-single-property-change (point-max) 'field nil pmark)))))
 
 ;;; Terminal emulation
 
@@ -630,8 +630,9 @@ Return non-nil if the position was actually reached."
   "Insert STR using PROC-FILT and PROCESS.
 Basically, call PROC-FILT with the arguments PROCESS and STR, but
 adjusting `ansi-color-context-region' beforehand."
-  (when-let ((context ansi-color-context-region))
-    (set-marker (cadr context) (process-mark process)))
+  (when-let ((context ansi-color-context-region)
+             (marker (cadr context)))
+    (set-marker marker (process-mark process)))
   (funcall proc-filt process str))
 
 (defun coterm--t-delete-region (row1 col1 &optional row2 col2)
