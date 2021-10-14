@@ -833,10 +833,6 @@ buffer and the scrolling region must cover the whole screen."
       (setq coterm--t-row 0))))
 
 (defun coterm--t-emulate-terminal (proc-filt process string)
-  (when-let ((fragment coterm--t-unhandled-fragment))
-    (setq string (concat fragment string))
-    (setq coterm--t-unhandled-fragment nil))
-
   (let* ((pmark (process-mark process))
          (match 0)
          (will-insert-newlines 0)
@@ -872,6 +868,10 @@ buffer and the scrolling region must cover the whole screen."
           (funcall proc-filt process string)
 
         (with-current-buffer buf
+          (when-let ((fragment coterm--t-unhandled-fragment))
+            (setq string (concat fragment string))
+            (setq coterm--t-unhandled-fragment nil))
+
           (setq restore-point (if (= (point) pmark) pmark (point-marker)))
           (setq old-pmark (copy-marker pmark window-point-insertion-type))
           (coterm--t-adjust-from-pmark pmark)
