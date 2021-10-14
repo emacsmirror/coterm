@@ -538,6 +538,11 @@ is the process mark."
 
 (defconst coterm--t-control-seq-prefix-regexp "\e")
 
+(defvar coterm--t-log-buffer nil
+  "If non-nil, log process output to this buffer.
+Set it to a name of a buffer if you want to record process output
+for debugging purposes.")
+
 (defvar-local coterm--t-height nil
   "Number of lines in window.")
 (defvar-local coterm--t-width nil
@@ -868,6 +873,13 @@ buffer and the scrolling region must cover the whole screen."
           (funcall proc-filt process string)
 
         (with-current-buffer buf
+          (when coterm--t-log-buffer
+            (with-current-buffer (get-buffer-create coterm--t-log-buffer)
+              (save-excursion
+                (goto-char (point-max))
+                (insert (make-string 70 ?=) ?\n)
+                (insert string ?\n))))
+
           (when-let ((fragment coterm--t-unhandled-fragment))
             (setq string (concat fragment string))
             (setq coterm--t-unhandled-fragment nil))
