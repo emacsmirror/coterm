@@ -86,7 +86,9 @@
 ;;
 ;;    bugs-doseganje (at) groups.io
 ;;
-;; and can be viewed at https://groups.io/g/bugs-doseganje/topics
+;; and can be viewed at https://groups.io/g/bugs-doseganje/topics.  As this
+;; package is stored in GNU ELPA, non-trivial patches require copyright
+;; assignment to the FSF, see info node "(emacs) Copyright Assignment".
 
 ;;; Code:
 
@@ -705,7 +707,7 @@ characters that were moved after the column specified by
 (defun coterm--t-down-line (proc-filt process)
   "Go down one line or scroll if at bottom.
 This takes into account the scroll region as specified by
-`coterm--t-scroll-beg' and `coterm--t-scroll-end'.  If required
+`coterm--t-scroll-beg' and `coterm--t-scroll-end'.  If required,
 PROC-FILT and PROCESS are used to scroll with deletion and
 insertion of empty lines."
   (cond
@@ -729,7 +731,7 @@ insertion of empty lines."
 (defun coterm--t-up-line (proc-filt process)
   "Go up one line or scroll if at top.
 This takes into account the scroll region as specified by
-`coterm--t-scroll-beg' and `coterm--t-scroll-end'.  If required
+`coterm--t-scroll-beg' and `coterm--t-scroll-end'.  If required,
 PROC-FILT and PROCESS are used to scroll with deletion and
 insertion of empty lines."
   (cond
@@ -926,7 +928,7 @@ buffer and the scrolling region must cover the whole screen."
                                 (coterm--t-goto coterm--t-row coterm--t-col)
                                 (eq (char-before) ?\s))
                        ;; Awkward hack to make line-wrapping work in "less".
-                       ;; Very specific for the way "less" performs wrapping:
+                       ;; Very specific to the way "less" performs wrapping:
                        ;; When reaching the end of line, instead of sending
                        ;; "\r\n" to go to the start of the next line, it sends
                        ;; " \b": a space which wraps to the next line in most
