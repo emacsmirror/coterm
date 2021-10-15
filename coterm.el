@@ -96,9 +96,13 @@
 ;; complete and recognizable by adding the character "m" or "M" to your LESS
 ;; environment variable.  For example, in your ~/.bashrc, add this line:
 ;;
-;;   export LESS="FRXm"
+;;   export LESS="FRXim"
 ;;
-;; See man page less(1) for more information.
+;; The "FRX" options make "less" more compatible with "git", and the "i" option
+;; enables case insensitive search in less.  See man page less(1) for more
+;; information.  Automatic char mode detection also usually fails if
+;; "--incsearch" is enabled in "less".  It is advised to either turn this
+;; option off or to use manual char mode.
 ;;
 ;;
 ;; Bugs, suggestions and patches can be sent to
@@ -108,6 +112,17 @@
 ;; and can be viewed at https://groups.io/g/bugs-doseganje/topics.  As this
 ;; package is stored in GNU ELPA, non-trivial patches require copyright
 ;; assignment to the FSF, see info node "(emacs) Copyright Assignment".
+;;
+;; Some useful information you can send in your bug reports:
+;;
+;; After enabling `coterm-mode', open up an M-x shell and copy the output of
+;; the following shell command:
+;;
+;;   export | cat -v | grep 'LESS\|TERM'; stty;
+;;
+;; You can also set the variable `coterm--t-log-buffer' to "coterm-log",
+;; reproduce the issue and attach the contents of the buffer named
+;; "coterm-log", which now contains all process output that was sent to coterm.
 
 ;;; Code:
 
@@ -366,6 +381,7 @@ that char mode is maintained even if the user presses \"/\",
               (coterm--auto-char-less-prompt-1)
               (progn
                 (forward-line 0)
+                ;; Various secondary prompts that "less" outputs
                 (prog1 (looking-at (concat
                                     "\\(?: ESC\\| :\\)\\'\\|"
                                     "Examine: \\|"
@@ -486,7 +502,7 @@ only leave these modes once cursor moves to the bottom line."
 
 (defun coterm--narrow-to-process-output (pmark)
   "Widen and narrow to process output.
-If there is no user input at end of buffer, simply widen. PMARK
+If there is no user input at end of buffer, simply widen.  PMARK
 is the process mark."
   (widen)
   (unless comint-use-prompt-regexp
