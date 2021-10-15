@@ -367,8 +367,14 @@ that char mode is maintained even if the user presses \"/\",
               (progn
                 (forward-line 0)
                 (prog1 (looking-at (concat
-                                    "\\(?: ESC\\| :\\|-\\)\\'\\|"
-                                    "Examine: \\|[/:]"))
+                                    "\\(?: ESC\\| :\\)\\'\\|"
+                                    "Examine: \\|"
+                                    "[Ll]og file: \\|"
+                                    "Target line: \\|"
+                                    "Backwards scroll limit: \\|"
+                                    "\\(?:set \\|goto \\||\\)mark: \\|"
+                                    "[:_+!-]\\|"
+                                    "\\(?:.* \\)?[/?]"))
                   (goto-char (point-max))))
               (rem-hook))))
          (rem-hook ()
