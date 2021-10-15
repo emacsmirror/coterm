@@ -82,6 +82,25 @@
 ;; need to manually enable and disable char mode.
 ;;
 ;;
+;; Some common probles:
+;;
+;; If some TUI programs misbehave, try checking your TERM environment variable
+;; with 'echo $TERM' in your coterm enabled M-x shell.  It should normally be
+;; set to "coterm-color".  If if isn't, it might be that one of your shell
+;; initialization files (~/.bashrc) changes it, so check for that and remove
+;; the change.
+;;
+;; The default "less" prompt, when invoked as 'less ~/some/file', is too
+;; generic and isn't recognized by `coterm-auto-char-mode', so char mode isn't
+;; entered automatically.  It is recommended to make your "less" prompt more
+;; complete and recognizable by adding the character "m" or "M" to your LESS
+;; environment variable.  For example, in your ~/.bashrc, add this line:
+;;
+;;   export LESS="FRXm"
+;;
+;; See man page less(1) for more information.
+;;
+;;
 ;; Bugs, suggestions and patches can be sent to
 ;;
 ;;    bugs-doseganje (at) groups.io
@@ -99,7 +118,12 @@
 ;;; Mode functions and configuration
 
 (defcustom coterm-term-name term-term-name
-  "Name to use for TERM."
+  "Name to use for TERM.
+coterm will use this option to set the TERM environment variable
+for the subprocess.  TUI programs usually consult this
+environment variable to decide which escape sequences it should
+send to the terminal.  It is recommended to leave this set to
+\"eterm-color\", the terminal type coterm emulates."
   :group 'comint
   :type 'string)
 
