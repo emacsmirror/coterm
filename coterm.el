@@ -837,8 +837,10 @@ NEWLINES is the number of newlines STR contains.  Unless it is
 zero, insertion must happen at the end of accessible portion of
 buffer and the scrolling region must cover the whole screen."
   (coterm--t-adjust-pmark proc-filt process)
-  (coterm--t-apply-proc-filt proc-filt process str)
-  (goto-char (process-mark process))
+  (let ((pmark (process-mark process)))
+    (goto-char pmark)
+    (coterm--t-apply-proc-filt proc-filt process str)
+    (goto-char pmark))
   (let ((column (current-column)))
     (if (zerop newlines)
         (if coterm--t-insert-mode
