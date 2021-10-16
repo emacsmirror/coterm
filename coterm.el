@@ -33,11 +33,11 @@
 ;;
 ;; In addition to that, the following two local minor modes may be used:
 ;;
-;; `coterm-char-mode': If enabled, most characters you type are sent directly
+;; `coterm-char-mode': if enabled, most characters you type are sent directly
 ;; to the subprocess, which is useful for interacting with full-screen TUI
 ;; programs.
 ;;
-;; `coterm-auto-char-mode' If enabled, coterm will enter and leave
+;; `coterm-auto-char-mode': if enabled, coterm will enter and leave
 ;; `coterm-char-mode' automatically as appropriate.  For example, if you
 ;; execute "less" in a shell buffer, coterm will detect that "less" is running
 ;; and automatically enable char mode so that you can interact with less
@@ -53,12 +53,14 @@
 ;; The command `coterm-char-mode-cycle' is a handy command to cycle between
 ;; automatic char-mode, char-mode enabled and char-mode disabled.
 ;;
+;;
 ;; Installation:
 ;;
-;; Add the following to your Emacs init file:
+;; To install coterm, type M-x package-install RET coterm RET
 ;;
-;;   (add-to-list 'load-path "/path/to/emacs-coterm")
-;;   (require 'coterm)
+;; It is best to add the following elisp snippet to you Emacs init file, to
+;; enable `coterm-mode' automatically on startup:
+;;
 ;;   (coterm-mode)
 ;;
 ;;   ;; Optional: bind `coterm-char-mode-cycle' to C-; in comint
