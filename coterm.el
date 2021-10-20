@@ -916,7 +916,11 @@ buffer and the scrolling region must cover the whole screen."
          (car-or-1 ()
            `(max 1 (car ctl-params)))
          (cadr-or-0 ()
-           `(or (cadr ctl-params) 0)))
+           `(or (cadr ctl-params) 0))
+         (at-eob ()
+           `(and coterm--t-pmark-in-sync
+                 (= pmark (point-max))
+                 (not (coterm--t-scroll-by-deletion-p)))))
 
       (if (not (and string
                     (setq buf (process-buffer process))
@@ -957,9 +961,7 @@ buffer and the scrolling region must cover the whole screen."
                  ;; when the process just outputs text at eob without any
                  ;; control sequences, we will end up inserting the whole
                  ;; string without a single call to `substring'.
-                 (if (and coterm--t-pmark-in-sync
-                          (= pmark (point-max))
-                          (not (coterm--t-scroll-by-deletion-p)))
+                 (if (at-eob)
                      (progn (pass-through)
                             (cl-incf will-insert-newlines))
                    (ins)
@@ -971,10 +973,7 @@ buffer and the scrolling region must cover the whole screen."
                      (setq coterm--t-col 0)
                      (dirty))
                 ;; TAB (terminfo: ht)
-                ((and ?\t
-                      (guard coterm--t-pmark-in-sync)
-                      (guard (= pmark (point-max)))
-                      (guard (not (coterm--t-scroll-by-deletion-p))))
+                ((and ?\t (guard (at-eob)))
                  ;; Insert a TAB as is, if at eob
                  (pass-through))
                 (?\t
