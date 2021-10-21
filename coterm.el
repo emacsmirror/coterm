@@ -54,7 +54,7 @@
 ;; automatic char-mode, char-mode enabled and char-mode disabled.
 ;;
 ;;
-;; Installation:
+;;;; Installation:
 ;;
 ;; To install coterm, type M-x package-install RET coterm RET
 ;;
@@ -72,7 +72,7 @@
 ;;   ;;   (setq-default comint-process-echoes t)
 ;;
 ;;
-;; Differences from M-x term:
+;;;; Differences from M-x term:
 ;;
 ;; coterm is written as an upgrade to comint.  For existing comint users, the
 ;; behaviour of comint doesn't change with coterm enabled except for the added
@@ -84,7 +84,7 @@
 ;; need to manually enable and disable char mode.
 ;;
 ;;
-;; Some common probles:
+;;;; Some common probles:
 ;;
 ;; If some TUI programs misbehave, try checking your TERM environment variable
 ;; with 'echo $TERM' in your coterm enabled M-x shell.  It should normally be
@@ -107,7 +107,7 @@
 ;; option off or to use manual char mode.
 ;;
 ;;
-;; Bugs, suggestions and patches can be sent to
+;;;; Bugs, suggestions and patches can be sent to
 ;;
 ;;    bugs-doseganje (at) groups.io
 ;;
