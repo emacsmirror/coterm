@@ -58,7 +58,7 @@
 ;;
 ;; To install coterm, type M-x package-install RET coterm RET
 ;;
-;; It is best to add the following elisp snippet to you Emacs init file, to
+;; It is best to add the following elisp snippet to your Emacs init file, to
 ;; enable `coterm-mode' automatically on startup:
 ;;
 ;;   (coterm-mode)
@@ -519,7 +519,7 @@ is the process mark."
 ;; This is essentially a re-implementation of term.el's terminal emulation.  I
 ;; could have simply reused functions from term.el but that would have been
 ;; unsatisfactory in my opinion.  That is mostly due to the fact that term.el's
-;; terminal emulation inserts a lot of redundant trailing whitespace end empty
+;; terminal emulation inserts a lot of redundant trailing whitespace and empty
 ;; lines, which I believe is very distracting for ordinary comint usage.
 ;;
 ;; Terminal emulation is coordinate based, for example, "move cursor to row 11
@@ -527,7 +527,7 @@ is the process mark."
 ;; buffer because the specified line is currently too short or there aren't
 ;; enough lines in the buffer.  term.el automatically inserts empty lines and
 ;; spaces in order to move point to a specified coordinate position.  This
-;; results in trailing whitespace.
+;; often results in trailing whitespace.
 ;;
 ;; coterm takes a different approach.  Instead of moving point, the current
 ;; terminal cursor coordinates are kept in the variables `coterm--t-row' and
@@ -557,7 +557,7 @@ is the process mark."
 ;; terminal emulation isn't fully accurate for long lines.  Up to now, "less"
 ;; was the only program I've encountered that relies on accurate line wrapping,
 ;; so a workaround aimed at "less" specifically was implemented (search for the
-;; term "less" in the function `coterm--t-emulate-terminal'.
+;; term "less" in the function `coterm--t-emulate-terminal').
 
 (defconst coterm--t-control-seq-regexp
   ;; Differences from `term-control-seq-regexp':
@@ -870,7 +870,7 @@ buffer and the scrolling region must cover the whole screen."
     (setq coterm--t-col column)))
 
 (defun coterm--t-adjust-from-pmark (pos)
-  "Point `coterm--t-row' and `coterm--t-col' POS."
+  "Make `coterm--t-row' and `coterm--t-col' point to POS."
   (coterm--t-normalize-home-offset)
   (goto-char pos)
   (setq coterm--t-col (current-column))
