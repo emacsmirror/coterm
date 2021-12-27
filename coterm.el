@@ -1056,7 +1056,7 @@ buffer and the scrolling region must cover the whole screen."
                                                 (split-string ctl-params ";")))
                        (ins)
                        (pcase char
-                         (?H ;; cursor motion (terminfo: cup,home)
+                         ((or ?H ?f) ;; cursor motion (terminfo: cup,home)
                           (setq coterm--t-row
                                 (1- (max 1 (min (car-or-1) coterm--t-height))))
                           (setq coterm--t-col
