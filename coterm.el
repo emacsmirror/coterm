@@ -1106,9 +1106,10 @@ buffer and the scrolling region must cover the whole screen."
                           (coterm--t-delete-region coterm--t-row 0
                                                    coterm--t-row coterm--t-col)
                           (coterm--t-open-space proc-filt process 0 coterm--t-col))
-                         (?K (coterm--t-delete-region
-                              coterm--t-row coterm--t-col
-                              coterm--t-row coterm--t-width))
+                         (?K (when (< coterm--t-col coterm--t-width)
+                               (coterm--t-delete-region
+                                coterm--t-row coterm--t-col
+                                coterm--t-row coterm--t-width)))
                          (?L ;; \E[L - insert lines (terminfo: il, il1)
                           (when (<= coterm--t-scroll-beg coterm--t-row
                                     (1- coterm--t-scroll-end))
