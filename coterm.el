@@ -340,7 +340,8 @@ their doc strings for more information."
   :lighter coterm-auto-char-lighter-mode-format)
 
 (defvar coterm-auto-char-functions
-  (list #'coterm--auto-char-less-prompt
+  (list #'coterm--auto-char-alternative-sub-buffer
+        #'coterm--auto-char-less-prompt
         #'coterm--auto-char-mpv-prompt
         #'coterm--auto-char-not-eob
         #'coterm--auto-char-leave-both)
@@ -365,6 +366,15 @@ If point is not on process mark, leave `coterm-char-mode' and
           (run-hook-with-args-until-success 'coterm-auto-char-functions))
       (when coterm-char-mode (coterm-char-mode -1))
       (when coterm-scroll-snap-mode (coterm-scroll-snap-mode -1)))))
+
+(defvar coterm--t-alternative-sub-buffer)
+
+(defun coterm--auto-char-alternative-sub-buffer ()
+  "Enter `coterm-char-mode' if using an alternative sub-buffer."
+  (when coterm--t-alternative-sub-buffer
+    (unless coterm-char-mode (coterm-char-mode 1))
+    (unless coterm-scroll-snap-mode (coterm-scroll-snap-mode 1))
+    t))
 
 (defun coterm--auto-char-less-prompt ()
   "Enter `coterm-char-mode' if a \"less\" prompt is detected.
@@ -620,6 +630,11 @@ If nil, the current position is at process mark.")
 In sync with variables `coterm--t-home-marker',
 `coterm--t-home-offset', `coterm--t-row' and `coterm--t-col'")
 
+(defvar-local coterm--t-alternative-sub-buffer nil
+  "Non-nil if using an alternative sub-buffer (termcap smcup).
+The values is actually the saved `coterm--t-home-marker' before
+entering the alternative sub-buffer.")
+
 (defvar-local coterm--t-saved-cursor nil)
 (defvar-local coterm--t-insert-mode nil)
 (defvar-local coterm--t-unhandled-fragment nil)
@@ -671,11 +686,13 @@ In sync with variables `coterm--t-home-marker',
   (when coterm--t-row
     (setq coterm--t-col (max coterm--t-col (1- coterm--t-width)))
     (when (>= coterm--t-row coterm--t-height)
-      (cl-incf coterm--t-home-offset (- coterm--t-row coterm--t-height -1))
-      (setq coterm--t-row (1- coterm--t-height))
-      (let ((opoint (point)))
-        (coterm--t-normalize-home-offset)
-        (goto-char opoint)))))
+      (if coterm--t-alternative-sub-buffer
+          (setq coterm--t-row (1- coterm--t-height))
+        (cl-incf coterm--t-home-offset (- coterm--t-row coterm--t-height -1))
+        (setq coterm--t-row (1- coterm--t-height))
+        (let ((opoint (point)))
+          (coterm--t-normalize-home-offset)
+          (goto-char opoint))))))
 
 (defun coterm--t-goto (row col)
   "Move point to a position that approximates ROW and COL.
@@ -754,8 +771,35 @@ characters that were moved after the column specified by
     (set-marker coterm--t-home-marker (point))
     (setq coterm--t-home-offset (max 0 left-to-move))))
 
+(defun coterm--t-switch-to-alternate-sub-buffer (proc-filt process set)
+  (cond
+   ((and set (null coterm--t-alternative-sub-buffer))
+    (let ((coterm--t-row coterm--t-height)
+          (coterm--t-col 0))
+      (setq coterm--t-pmark-in-sync nil)
+      (coterm--t-insert proc-filt process "" 0))
+    (setq coterm--t-pmark-in-sync nil)
+    (coterm--t-normalize-home-offset)
+    (setq coterm--t-alternative-sub-buffer coterm--t-home-marker)
+    (setq coterm--t-home-marker (copy-marker (process-mark process))))
+
+   ((and (not set) coterm--t-alternative-sub-buffer)
+    (delete-region coterm--t-home-marker (point-max))
+    (setq coterm--t-pmark-in-sync nil)
+    (coterm--t-goto -1 0)
+    (set-marker coterm--t-home-marker coterm--t-alternative-sub-buffer)
+    (set-marker coterm--t-alternative-sub-buffer nil)
+    (setq coterm--t-alternative-sub-buffer nil)
+
+    (forward-line (- 1 coterm--t-height))
+    (when (> (point) coterm--t-home-marker)
+      (set-marker coterm--t-home-marker (point)))
+    (setq coterm--t-row (1- coterm--t-height)
+          coterm--t-col 0))))
+
 (defun coterm--t-scroll-by-deletion-p ()
-  (or (/= coterm--t-scroll-beg 0)
+  (or coterm--t-alternative-sub-buffer
+      (/= coterm--t-scroll-beg 0)
       (/= coterm--t-scroll-end coterm--t-height)))
 
 (defun coterm--t-down-line (proc-filt process)
@@ -1151,14 +1195,16 @@ buffer and the scrolling region must cover the whole screen."
                             (dirty)))
                          (?h ;; \E[?h - DEC Private Mode Set
                           (pcase (car ctl-params)
-                            ;; (49 ;; (terminfo: smcup)
-                            ;;  (coterm--t-switch-to-alternate-sub-buffer t))
+                            (47 ;; (terminfo: smcup)
+                             (coterm--t-switch-to-alternate-sub-buffer
+                              proc-filt process t))
                             (4 ;; (terminfo: smir)
                              (setq coterm--t-insert-mode t))))
                          (?l ;; \E[?l - DEC Private Mode Reset
                           (pcase (car ctl-params)
-                            ;; (49 ;; (terminfo: rmcup)
-                            ;;  (coterm--t-switch-to-alternate-sub-buffer nil))
+                            (47 ;; (terminfo: rmcup)
+                             (coterm--t-switch-to-alternate-sub-buffer
+                              proc-filt process nil))
                             (4 ;; (terminfo: rmir)
                              (setq coterm--t-insert-mode nil))))
                          (?n ;; \E[6n - Report cursor position (terminfo: u7)
