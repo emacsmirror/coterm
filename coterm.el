@@ -260,6 +260,9 @@ Useful for full-screen terminal programs to keep them on screen."
         (kill-local-variable 'scroll-margin)))
     (remove-hook 'coterm-t-after-insert-hook #'coterm--scroll-snap t)))
 
+(defvar coterm--t-home)
+(defvar coterm--t-home-off)
+
 (defun coterm--scroll-snap ()
   ;; We need to check for `coterm-scroll-snap-mode' because a function in
   ;; `coterm-t-after-insert-hook' might have changed it
@@ -279,11 +282,15 @@ Useful for full-screen terminal programs to keep them on screen."
                        (= (window-point w) pmark))
               (if (eq sel-win w)
                   (progn
-                    (coterm--t-goto 0 0)
+                    (goto-char coterm--t-home)
+                    (forward-line coterm--t-home-off)
+                    (forward-line 0)
                     (recenter 0)
                     (goto-char pmark))
                 (with-selected-window w
-                  (coterm--t-goto 0 0)
+                  (goto-char coterm--t-home)
+                  (forward-line coterm--t-home-off)
+                  (forward-line 0)
                   (recenter 0)
                   (goto-char pmark))))
             (setq w (next-window w nil t))
@@ -536,21 +543,17 @@ is the process mark."
 ;; and column 21".  A coordinate position may not be reachable in an Emacs
 ;; buffer because the specified line is currently too short or there aren't
 ;; enough lines in the buffer.  term.el automatically inserts empty lines and
-;; spaces in order to move point to a specified coordinate position.  This
+;; spaces in order to move point to a specified coordinate position, which
 ;; often results in trailing whitespace.
 ;;
-;; coterm takes a different approach.  Instead of moving point, the current
-;; terminal cursor coordinates are kept in the variables `coterm--t-row' and
-;; `coterm--t-col'.  Moving the terminal cursor simply means adjusting these
-;; two variables, no whitespace needs to be inserted.  Point and process mark
-;; are usually not guaranteed to be anywhere near the current coordinate
-;; position and are only restored at the end of the main filter function
-;; `coterm--t-emulate-terminal'.  Only when terminal emulation requires
-;; insertion of actual text do we have to be able to reach the current cursor
-;; coordinates.  We may have to insert newlines and spaces to make this
-;; position reachable, but inserting text after this whitespace means that it
-;; isn't trailing or redundant (except if the inserted text consists of only
-;; whitespace).
+;; coterm takes a different approach.  Rather than insert whitespace, we move
+;; point close to the target terminal cursor coordinates and save the offset in
+;; the variables `coterm--t-row-off' and `coterm--t-col-off'.  Only when
+;; terminal emulation requires insertion of actual text do we have to be able
+;; to reach the current cursor coordinates.  We may have to insert newlines and
+;; spaces to make this position reachable, but inserting text after this
+;; whitespace means that it isn't trailing or redundant (except if the inserted
+;; text consists of only whitespace).
 ;;
 ;;
 ;; Line wrapping:
@@ -611,29 +614,49 @@ for debugging purposes.")
 (defvar-local coterm--t-scroll-end nil
   "First row after the end of the scrolling area.")
 
-(defvar-local coterm--t-home-marker nil
+(defvar-local coterm--t-home nil
   "Marks the \"home\" position for cursor addressing.
-`coterm--t-home-offset' should be taken into account as well.")
-(defvar-local coterm--t-home-offset 0
+`coterm--t-home-off' should be taken into account as well.")
+(defvar-local coterm--t-home-off 0
   "How many rows lower the home position actually is.
-This usually is needed if `coterm--t-home-marker' is on the last
-line of the buffer.")
-(defvar-local coterm--t-row nil
-  "Current position from home marker.
-If nil, the current position is at process mark.")
-(defvar-local coterm--t-col nil
-  "Current position from home marker.
-If nil, the current position is at process mark.")
+This usually is needed if `coterm--t-home' is on the last line of
+the buffer.")
+(defvar-local coterm--t-row-off 0
+  "How many rows lower the current position actually is.
+May be non-zero if point on the last line of accessible portion
+of the buffer.  More precisely, this variable can only be
+non-zero if there are no \\n characters after point.")
+(defvar-local coterm--t-col-off 0
+  "How many cols to the right the current position actually is.
+Non-zero only if point is on the end of line.")
 
-(defvar-local coterm--t-pmark-in-sync nil
-  "If t, pmark is guaranteed to be in sync.
-In sync with variables `coterm--t-home-marker',
-`coterm--t-home-offset', `coterm--t-row' and `coterm--t-col'")
+(defvar-local coterm--t-row nil
+  "Cache of current terminal row if non-nil.")
+(defvar-local coterm--t-col nil
+  "Cache of current terminal column if non-nil.")
+
+(defun coterm--t-row ()
+  "Return terminal's current row.
+Use the variable `coterm--t-row' as the cache if non-nil.  Set it
+to nil to invalidate the cache."
+  (or coterm--t-row
+      (setq coterm--t-row
+            (- (+ (save-restriction
+                    (save-excursion
+                      (narrow-to-region coterm--t-home (point-max))
+                      (+ (forward-line -9999) 9999)))
+                  coterm--t-row-off)
+               coterm--t-home-off))))
+
+(defun coterm--t-col ()
+  "`current-column' with cache.
+The variable `coterm--t-col' holds the cache if
+non-nil. Set it to nil to invalidate the cache."
+  (or coterm--t-col
+      (setq coterm--t-col (+ (current-column) coterm--t-col-off))))
 
 (defvar-local coterm--t-alternative-sub-buffer nil
-  "Non-nil if using an alternative sub-buffer (termcap smcup).
-The values is actually the saved `coterm--t-home-marker' before
-entering the alternative sub-buffer.")
+  "Non-nil if using an alternative sub-buffer (termcap smcup).")
 
 (defvar-local coterm--t-saved-cursor nil)
 (defvar-local coterm--t-insert-mode nil)
@@ -656,7 +679,7 @@ entering the alternative sub-buffer.")
   (when-let ((process (get-buffer-process (current-buffer))))
     (setq coterm--t-height (floor (window-screen-lines)))
     (setq coterm--t-width (window-max-chars-per-line))
-    (setq coterm--t-home-marker (point-min-marker))
+    (setq coterm--t-home (point-min-marker))
     (setq coterm--t-scroll-beg 0)
     (setq coterm--t-scroll-end coterm--t-height)
 
@@ -677,130 +700,94 @@ entering the alternative sub-buffer.")
                   #'coterm--t-emulate-terminal)))
 
 (defun coterm--t-reset-size (height width)
-  (setq coterm--t-height height)
-  (setq coterm--t-width width)
-  (setq coterm--t-scroll-beg 0)
-  (setq coterm--t-scroll-end height)
-  (setq coterm--t-pmark-in-sync nil)
-
-  (when coterm--t-row
-    (setq coterm--t-col (max coterm--t-col (1- coterm--t-width)))
-    (when (>= coterm--t-row coterm--t-height)
-      (if coterm--t-alternative-sub-buffer
-          (setq coterm--t-row (1- coterm--t-height))
-        (cl-incf coterm--t-home-offset (- coterm--t-row coterm--t-height -1))
-        (setq coterm--t-row (1- coterm--t-height))
-        (let ((opoint (point)))
-          (coterm--t-normalize-home-offset)
-          (goto-char opoint))))))
+  (let ((shrunk (< height coterm--t-height)))
+    (setq coterm--t-height height)
+    (setq coterm--t-width width)
+    (setq coterm--t-scroll-beg 0)
+    (setq coterm--t-scroll-end height)
+    (when-let ((shrunk)
+               (proc (get-buffer-process (current-buffer)))
+               (pmark (process-mark proc)))
+      (save-excursion
+        (save-restriction
+          (coterm--narrow-to-process-output pmark)
+          (goto-char pmark)
+          (setq coterm--t-row nil)
+          (when (>= (coterm--t-row) height)
+            (cond
+             (coterm--t-alternative-sub-buffer
+              (goto-char coterm--t-home)
+              (forward-line (- coterm--t-row height -1))
+              (delete-region coterm--t-home (point)))
+             (t
+              (cl-incf coterm--t-home-off (- coterm--t-row coterm--t-height -1))
+              (setq coterm--t-row (1- coterm--t-height))))))))))
 
 (defun coterm--t-goto (row col)
   "Move point to a position that approximates ROW and COL.
-Return non-nil if the position was actually reached."
-  (goto-char coterm--t-home-marker)
-  (and
-   (zerop (forward-line
-           (+ coterm--t-home-offset row)))
-   (bolp)
-   (<= col (move-to-column col))))
+Set `coterm--t-row-off' and `coterm--t-col-off' accordingly."
+  (goto-char coterm--t-home)
+  (setq coterm--t-row-off
+        (+ (forward-line (+ coterm--t-home-off row))
+           (if (bolp) 0 1)))
+  (setq coterm--t-row row)
+  (setq coterm--t-col-off
+        (- col (move-to-column (setq coterm--t-col col)))))
 
 (defun coterm--t-apply-proc-filt (proc-filt process str)
-  "Insert STR using PROC-FILT and PROCESS.
+  "Insert STR at point using PROC-FILT and PROCESS.
 Basically, call PROC-FILT with the arguments PROCESS and STR, but
-adjusting `ansi-color-context-region' beforehand."
+adjusting `ansi-color-context-region' and setting PROCESS' mark
+to point beforehand.
+
+If STR contains newlines, the caller must take care that
+`coterm--t-row' is adjusted accordingly."
   (when-let ((context ansi-color-context-region)
              (marker (cadr context)))
-    (set-marker marker (process-mark process)))
-  (funcall proc-filt process str))
-
-(defun coterm--t-delete-region (row1 col1 &optional row2 col2)
-  "Delete text between two positions.
-Deletes resulting trailing whitespace as well.  ROW1, COL1, ROW2
-and COL2 specify the two positions.  ROW2 and COL2 can be nil, in
-which case delete to `point-max'.
-
-This function moves point to the beginning of the deleted
-region."
-  (coterm--t-goto row1 col1)
-  (delete-region (point)
-                 (if row2
-                     (progn (coterm--t-goto row2 col2) (point))
-                   (point-max)))
-  ;; Delete resulting trailing whitespace.  This may move the home marker under
-  ;; some circumstances ((coterm--t-delete-region 0 0), for example), so adjust
-  ;; it afterwards.
-  (let* ((home coterm--t-home-marker)
-         (old-home (marker-position home)))
-    (when (eolp)
-      (let ((opoint (point)))
-        (skip-chars-backward " ") (delete-region (point) opoint)))
-    (when (eobp)
-      (let ((opoint (point)))
-        (skip-chars-backward "\n") (delete-region (point) opoint)))
-    (unless (= old-home home)
-      (cl-incf coterm--t-home-offset (- old-home home))
-      (goto-char home)
-      (forward-line 0)
-      (set-marker home (point))))
-  (setq coterm--t-pmark-in-sync nil))
-
-(defun coterm--t-open-space (proc-filt process newlines spaces)
-  "Insert NEWLINES newlines and SPACES spaces at point.
-Insert them using PROC-FILT and PROCESS.  Afterwards, remove
-characters that were moved after the column specified by
-`coterm--t-width'."
-  (unless (eobp)
-    (set-marker (process-mark process) (point))
-    (coterm--t-apply-proc-filt
-     proc-filt process
-     (concat (make-string newlines ?\n)
-             (unless (eolp)
-               (make-string spaces ?\s))))
-    ;; Delete chars that are after the width of the terminal
-    (goto-char (process-mark process))
-    (move-to-column coterm--t-width)
-    (delete-region (point) (progn (forward-line 1) (1- (point))))
-    (setq coterm--t-pmark-in-sync nil)))
-
-(defun coterm--t-normalize-home-offset ()
-  (goto-char coterm--t-home-marker)
-  (let ((left-to-move (forward-line coterm--t-home-offset)))
-    (unless (bolp)
-      (cl-incf left-to-move)
-      (forward-line 0))
-    (set-marker coterm--t-home-marker (point))
-    (setq coterm--t-home-offset (max 0 left-to-move))))
+    (set-marker marker (point)))
+  (set-marker (process-mark process) (point))
+  (funcall proc-filt process str)
+  (unless (string-empty-p str)
+    (setq coterm--t-col nil)))
 
 (defun coterm--t-switch-to-alternate-sub-buffer (proc-filt process set)
   (cond
    ((and set (null coterm--t-alternative-sub-buffer))
-    (let ((coterm--t-row coterm--t-height)
-          (coterm--t-col 0))
-      (setq coterm--t-pmark-in-sync nil)
-      (coterm--t-insert proc-filt process "" 0))
-    (setq coterm--t-pmark-in-sync nil)
-    (coterm--t-normalize-home-offset)
-    (setq coterm--t-alternative-sub-buffer coterm--t-home-marker)
-    (setq coterm--t-home-marker (copy-marker (process-mark process))))
+    (setq coterm--t-alternative-sub-buffer
+          (list coterm--t-home
+                coterm--t-home-off
+                (coterm--t-row)
+                (coterm--t-col)))
+    (setq coterm--t-home-off 0)
+    (setq coterm--t-row-off 0)
+    (setq coterm--t-col-off 0)
+    (setq coterm--t-row 0)
+    (setq coterm--t-col 0)
+    (goto-char (point-max))
+    (unless (bolp)
+      (coterm--t-apply-proc-filt proc-filt process "\n"))
+    (setq coterm--t-home (point-marker)))
 
    ((and (not set) coterm--t-alternative-sub-buffer)
-    (delete-region coterm--t-home-marker (point-max))
-    (setq coterm--t-pmark-in-sync nil)
-    (coterm--t-goto -1 0)
-    (set-marker coterm--t-home-marker coterm--t-alternative-sub-buffer)
-    (set-marker coterm--t-alternative-sub-buffer nil)
+    (delete-region coterm--t-home (point-max))
+    (set-marker coterm--t-home (car coterm--t-alternative-sub-buffer))
+    (set-marker (car coterm--t-alternative-sub-buffer) nil)
+    (setq coterm--t-home-off (nth 1 coterm--t-alternative-sub-buffer))
+    (coterm--t-goto (nth 2 coterm--t-alternative-sub-buffer)
+                    (nth 3 coterm--t-alternative-sub-buffer))
     (setq coterm--t-alternative-sub-buffer nil)
 
-    (forward-line (- 1 coterm--t-height))
-    (when (> (point) coterm--t-home-marker)
-      (set-marker coterm--t-home-marker (point)))
-    (setq coterm--t-row (1- coterm--t-height)
-          coterm--t-col 0))))
+    (when (>= (coterm--t-row) coterm--t-height)
+      (let ((opoint (point)))
 
-(defun coterm--t-scroll-by-deletion-p ()
-  (or coterm--t-alternative-sub-buffer
-      (/= coterm--t-scroll-beg 0)
-      (/= coterm--t-scroll-end coterm--t-height)))
+        (setq coterm--t-home-off
+              (forward-line (+ 1 (- coterm--t-height) coterm--t-row-off)))
+        (unless (eolp)
+          (cl-incf coterm--t-home-off)
+          (forward-line 0))
+        (set-marker coterm--t-home (point))
+        (setq coterm--t-row (1- coterm--t-height))
+        (goto-char opoint))))))
 
 (defun coterm--t-down-line (proc-filt process)
   "Go down one line or scroll if at bottom.
@@ -808,23 +795,45 @@ This takes into account the scroll region as specified by
 `coterm--t-scroll-beg' and `coterm--t-scroll-end'.  If required,
 PROC-FILT and PROCESS are used to scroll with deletion and
 insertion of empty lines."
-  (cond
-   ((and (= coterm--t-row (1- coterm--t-scroll-end))
-         (coterm--t-scroll-by-deletion-p))
-    (coterm--t-delete-region coterm--t-scroll-beg 0
-                             (1+ coterm--t-scroll-beg) 0)
-    (coterm--t-goto coterm--t-row 0)
-    (coterm--t-open-space proc-filt process 1 0))
-   ((and (= coterm--t-row (1- coterm--t-height))
-         (coterm--t-scroll-by-deletion-p))
-    ;; Behaviour of xterm
-    (ignore))
-   ((< coterm--t-row (1- coterm--t-height))
-    (cl-incf coterm--t-row))
-   (t
-    (cl-incf coterm--t-home-offset)
-    (coterm--t-normalize-home-offset)))
-  (setq coterm--t-pmark-in-sync nil))
+  (let ((orow (coterm--t-row))
+        (ocol (coterm--t-col)))
+    (cond
+     ((= orow (1- coterm--t-scroll-end))
+      (let ((moved (and (zerop (forward-line)) (bolp))))
+        ;; Remove top line or move home marker
+        (save-excursion
+          (goto-char coterm--t-home)
+          (cond ((or coterm--t-alternative-sub-buffer
+                     (not (zerop coterm--t-scroll-beg)))
+                 ;; Remove top line
+                 (and (zerop (forward-line
+                              (+ coterm--t-home-off coterm--t-scroll-beg)))
+                      (bolp)
+                      (delete-region (point) (progn (forward-line) (point)))))
+                (t
+                 ;; Move home marker
+                 (if (and (zerop (forward-line)) (bolp))
+                     (set-marker coterm--t-home (point))
+                   (cl-incf coterm--t-home-off)))))
+        ;; Insert an empty line at the bottom
+        (cond (moved
+               (unless (eobp)
+                 (let ((opoint (point)))
+                   (coterm--t-apply-proc-filt proc-filt process "\n")
+                   (goto-char opoint)))
+               (setq coterm--t-col-off ocol))
+              (t
+               (cl-incf coterm--t-row-off)
+               (setq coterm--t-col-off (- ocol (move-to-column ocol)))))))
+     ((= orow (1- coterm--t-height))
+      ;; Do nothing, behaviour of xterm
+      (ignore))
+     (t
+      ;; Move point vertically down
+      (unless (and (zerop (forward-line)) (bolp))
+        (cl-incf coterm--t-row-off))
+      (cl-incf coterm--t-row)
+      (setq coterm--t-col-off (- ocol (move-to-column ocol)))))))
 
 (defun coterm--t-up-line (proc-filt process)
   "Go up one line or scroll if at top.
@@ -832,105 +841,92 @@ This takes into account the scroll region as specified by
 `coterm--t-scroll-beg' and `coterm--t-scroll-end'.  If required,
 PROC-FILT and PROCESS are used to scroll with deletion and
 insertion of empty lines."
-  (cond
-   ((and (= coterm--t-row coterm--t-scroll-beg)
-         (coterm--t-scroll-by-deletion-p))
-    (coterm--t-delete-region (1- coterm--t-scroll-end) 0
-                             coterm--t-scroll-end 0)
-    (coterm--t-goto coterm--t-row 0)
-    (coterm--t-open-space proc-filt process 1 0))
-   ((and (= coterm--t-row 0)
-         (coterm--t-scroll-by-deletion-p))
-    ;; Behaviour of xterm
-    (ignore))
-   ((< 0 coterm--t-row)
-    (cl-decf coterm--t-row))
-   (t
-    (coterm--t-delete-region (1- coterm--t-scroll-end) 0)
-    (cl-decf coterm--t-home-offset)
-    (coterm--t-normalize-home-offset)))
-  (setq coterm--t-pmark-in-sync nil))
+  (let ((orow (coterm--t-row))
+        (ocol (coterm--t-col)))
+    (cond
+     ((= orow coterm--t-scroll-beg)
+      ;; Remove bottom line
+      (save-excursion
+        (goto-char coterm--t-home)
+        (and (zerop (forward-line
+                     (+ coterm--t-home-off coterm--t-scroll-end -1)))
+             (bolp)
+             (delete-region (point) (progn (forward-line) (point)))))
+      ;; Insert an empty line at the top or move home marker
+      (cond ((and (not coterm--t-alternative-sub-buffer)
+                  (zerop coterm--t-scroll-beg))
+             ;; Move home marker
+             (forward-line -1)
+             (set-marker coterm--t-home (point))
+             (setq coterm--t-home-off 0)
+             (setq coterm--t-row 0)
+             (setq coterm--t-col-off (- ocol (move-to-column ocol))))
+            ((not (zerop coterm--t-row-off))
+             (ignore))
+            (t
+             ;; Insert an empty line at the top
+             (forward-line 0)
+             (let ((opoint (point)))
+               (coterm--t-apply-proc-filt proc-filt process "\n")
+               (goto-char opoint))
+             (setq coterm--t-col-off ocol))))
 
-(defun coterm--t-adjust-pmark (proc-filt process)
-  "Set PROCESS's mark to `coterm--t-row' and `coterm--t-col'.
-If necessary, this function inserts newlines and spaces using
-PROC-FILT, so use it sparingly, usually only before inserting
-non-whitespace text."
-  (unless coterm--t-pmark-in-sync
-    (let ((pmark (process-mark process)))
-      (goto-char coterm--t-home-marker)
+     ((= orow 0)
+      ;; Behaviour of xterm
+      (ignore))
 
-      (let ((newlines (forward-line
-                       (+ coterm--t-row coterm--t-home-offset))))
-        (unless (bolp)
-          (cl-incf newlines))
-        (unless (zerop newlines)
-          (set-marker pmark (point))
-          (coterm--t-apply-proc-filt
-           proc-filt process (make-string newlines ?\n))))
-
-      (let ((col (move-to-column coterm--t-col)))
-        (set-marker pmark (point))
-        (when (< col coterm--t-col)
-          (coterm--t-apply-proc-filt
-           proc-filt process (make-string (- coterm--t-col col) ?\s)))))
-    (setq coterm--t-pmark-in-sync t)
-    (coterm--t-normalize-home-offset)))
+     ((zerop coterm--t-row-off)
+      ;; Move point vetically up
+      (forward-line -1)
+      (cl-decf coterm--t-row)
+      (setq coterm--t-col-off (- ocol (move-to-column ocol))))
+     (t
+      (cl-decf coterm--t-row)
+      (cl-decf coterm--t-row-off)))))
 
 (defun coterm--t-insert (proc-filt process str newlines)
-  "Insert STR using PROC-FILT and PROCESS.
+  "Insert STR at point using PROC-FILT and PROCESS.
 Synchronise PROCESS's mark beforehand and insert at its position.
 NEWLINES is the number of newlines STR contains.  Unless it is
 zero, insertion must happen at the end of accessible portion of
-buffer and the scrolling region must cover the whole screen."
-  (coterm--t-adjust-pmark proc-filt process)
-  (let ((pmark (process-mark process)))
-    (goto-char pmark)
+buffer and the scrolling region must begin at the top of the
+terminal screen."
+  (unless (zerop coterm--t-row-off)
+    (setq coterm--t-col-off (coterm--t-col))
+    (goto-char (point-max)))
+  (unless (and (zerop coterm--t-col-off) (zerop coterm--t-row-off))
+    (coterm--t-apply-proc-filt proc-filt process
+                               (concat (make-string coterm--t-row-off ?\n)
+                                       (make-string coterm--t-col-off ?\s)))
+    (setq coterm--t-col-off 0 coterm--t-row-off 0))
+  (cond
+   ((not (zerop newlines))
     (coterm--t-apply-proc-filt proc-filt process str)
-    (goto-char pmark))
-  (let ((column (current-column)))
-    (if (zerop newlines)
-        (if coterm--t-insert-mode
-            ;; In insert mode, delete text outside the width of the terminal
-            (progn
-              (move-to-column coterm--t-width)
-              (delete-region
-               (point) (progn (forward-line 1) (1- (point)))))
-          ;; If not in insert mode, replace text
-          (when (> column coterm--t-col)
-            (delete-region
-             (point)
-             (progn (move-to-column (- (* 2 column) coterm--t-col))
-                    (point)))))
-      (cl-incf coterm--t-row newlines)
-      ;; We've inserted newlines, so we must scroll if necessary
-      (when (>= coterm--t-row coterm--t-height)
-        (goto-char coterm--t-home-marker)
-        (forward-line (+ coterm--t-home-offset
-                         (- coterm--t-row coterm--t-height -1)))
-        (set-marker coterm--t-home-marker (point))
-        (setq coterm--t-home-offset 0)
-        (setq coterm--t-row (1- coterm--t-height))))
-    (setq coterm--t-col column)))
+    (when coterm--t-row
+      (cl-incf coterm--t-row newlines))
 
-(defun coterm--t-adjust-from-pmark (pos)
-  "Make `coterm--t-row' and `coterm--t-col' point to POS."
-  (coterm--t-normalize-home-offset)
-  (goto-char pos)
-  (setq coterm--t-col (current-column))
-  (forward-line 0)
-  (if (> (point) coterm--t-home-marker)
-      ;; Here, `coterm--t-home-offset' is guaranteed to be 0
-      (save-restriction
-        (narrow-to-region coterm--t-home-marker (point))
-        (let ((lines-left (forward-line (- 1 coterm--t-height))))
-          (when (= 0 lines-left)
-            (set-marker coterm--t-home-marker (point)))
-          (setq coterm--t-row (+ -1 coterm--t-height lines-left))))
-    (progn
-      (set-marker coterm--t-home-marker (point))
-      (setq coterm--t-home-offset 0)
-      (setq coterm--t-row 0))))
+    ;; Scroll if necessary
+    (when (>= (coterm--t-row) coterm--t-height)
+      (let ((opoint (point)))
+        (forward-line (- 1 coterm--t-height))
+        (set-marker coterm--t-home (point))
+        (setq coterm--t-home-off 0)
+        (setq coterm--t-row (1- coterm--t-height))
+        (goto-char opoint))))
+
+   ((not (eobp))
+    (if coterm--t-insert-mode
+        (coterm--t-apply-proc-filt proc-filt process str)
+      ;; If not in insert mode, replace text
+      (let ((old-col (coterm--t-col)))
+        (coterm--t-apply-proc-filt proc-filt process str)
+        (when (< old-col (coterm--t-col))
+          (delete-region
+           (point)
+           (progn (move-to-column (- (* 2 coterm--t-col) old-col))
+                  (point)))))))
+
+   (t (coterm--t-apply-proc-filt proc-filt process str))))
 
 (defun coterm--t-emulate-terminal (proc-filt process string)
   (let* ((pmark (process-mark process))
@@ -953,18 +949,14 @@ buffer and the scrolling region must cover the whole screen."
                                     will-insert-newlines)
                   (setq will-insert-newlines 0)))
               (setq last-match-end ctl-end)))
-         (dirty ()
-           `(setq coterm--t-pmark-in-sync nil))
          (pass-through ()
            `(ignore))
+         (ctl-params* ()
+           `(mapcar #'string-to-number (split-string ctl-params ";")))
          (car-or-1 ()
-           `(max 1 (car ctl-params)))
+           `(max 1 (car (ctl-params*))))
          (cadr-or-0 ()
-           `(or (cadr ctl-params) 0))
-         (at-eob ()
-           `(and coterm--t-pmark-in-sync
-                 (= pmark (point-max))
-                 (not (coterm--t-scroll-by-deletion-p)))))
+           `(or (cadr (ctl-params*)) 0)))
 
       (if (not (and string
                     (setq buf (process-buffer process))
@@ -983,13 +975,38 @@ buffer and the scrolling region must cover the whole screen."
             (setq string (concat fragment string))
             (setq coterm--t-unhandled-fragment nil))
 
-          (setq restore-point (if (= (point) pmark) pmark (point-marker)))
-          (setq old-pmark (copy-marker pmark window-point-insertion-type))
-          (coterm--t-adjust-from-pmark pmark)
-          (setq coterm--t-pmark-in-sync t)
-
           (save-restriction
             (coterm--narrow-to-process-output pmark)
+
+            (setq restore-point (if (= (point) pmark) pmark (point-marker)))
+            (setq old-pmark (copy-marker pmark window-point-insertion-type))
+            (goto-char pmark)
+            ;; (setq coterm--t-row nil)
+            (setq coterm--t-col nil)
+            (setq coterm--t-row-off 0)
+            (setq coterm--t-col-off 0)
+
+            ;; scroll cursor pmark into view by moving home marker if necessary
+            (let ((opoint (point)))
+              (cond
+               ((<= opoint coterm--t-home)
+                (forward-line 0)
+                (set-marker coterm--t-home (point))
+                (setq coterm--t-home-off 0)
+                (setq coterm--t-row 0))
+               (t
+                (unless (zerop coterm--t-home-off)
+                  (goto-char coterm--t-home)
+                  (forward-line coterm--t-home-off)
+                  (set-marker coterm--t-home (point))
+                  (setq coterm--t-home-off 0)
+                  (goto-char opoint))
+                (forward-line (- 1 coterm--t-height))
+                (if (<= (point) coterm--t-home)
+                    (setq coterm--t-row nil)
+                  (set-marker coterm--t-home (point))
+                  (setq coterm--t-row (1- coterm--t-height)))))
+              (goto-char opoint))
 
             (while (setq match (string-match coterm--t-control-seq-regexp
                                              string ctl-end))
@@ -1005,19 +1022,24 @@ buffer and the scrolling region must cover the whole screen."
                  ;; when the process just outputs text at eob without any
                  ;; control sequences, we will end up inserting the whole
                  ;; string without a single call to `substring'.
-                 (if (at-eob)
+                 (if (and (eobp)
+                          (not coterm--t-alternative-sub-buffer)
+                          (= 0 coterm--t-scroll-beg))
                      (progn (pass-through)
                             (cl-incf will-insert-newlines))
                    (ins)
-                   (setq coterm--t-col 0)
+                   (setq coterm--t-col 0
+                         coterm--t-col-off 0)
+                   (move-to-column 0)
                    (coterm--t-down-line proc-filt process)))
                 (?\n (ins) ;; (terminfo: cud1, ind)
                      (coterm--t-down-line proc-filt process))
                 (?\r (ins) ;; (terminfo: cr)
-                     (setq coterm--t-col 0)
-                     (dirty))
+                     (setq coterm--t-col 0
+                           coterm--t-col-off 0)
+                     (move-to-column 0))
                 ;; TAB (terminfo: ht)
-                ((and ?\t (guard (at-eob)))
+                ((and ?\t (guard (eobp)))
                  ;; Insert a TAB as is, if at eob
                  (pass-through))
                 (?\t
@@ -1025,32 +1047,30 @@ buffer and the scrolling region must cover the whole screen."
                  (ins)
                  (setq coterm--t-col
                        (min (1- coterm--t-width)
-                            (+ coterm--t-col 8 (- (mod coterm--t-col 8)))))
-                 (dirty))
-                (?\b (ins) ;; (terminfo: cub1)
-
-                     (when (and (= coterm--t-col (1+ coterm--t-width))
-                                (not (coterm--t-scroll-by-deletion-p))
-                                (coterm--t-goto coterm--t-row coterm--t-col)
-                                (eq (char-before) ?\s))
-                       ;; Awkward hack to make line-wrapping work in "less".
-                       ;; Very specific to the way "less" performs wrapping:
-                       ;; When reaching the end of line, instead of sending
-                       ;; "\r\n" to go to the start of the next line, it sends
-                       ;; " \b": a space which wraps to the next line in most
-                       ;; terminals and a backspace to move to the start of the
-                       ;; line.  Here we detect this and handle it like an
-                       ;; ordinary "\r\n".
-                       ;;
-                       ;; For all other cases, coterm does not perform any
-                       ;; wrapping at all.
+                            (+ (coterm--t-col) 8 (- (mod coterm--t-col 8)))))
+                 (setq coterm--t-col-off (- coterm--t-col (move-to-column coterm--t-col))))
+                (?\b ;; (terminfo: cub1)
+                 (ins)
+                 (if (and (= (1- (coterm--t-col)) coterm--t-width)
+                          (eq (char-before) ?\s))
+                     ;; Awkward hack to make line-wrapping work in "less".
+                     ;; Very specific to the way "less" performs wrapping: When
+                     ;; reaching the end of line, instead of sending "\r\n" to
+                     ;; go to the start of the next line, it sends " \b": a
+                     ;; space which wraps to the next line in most terminals
+                     ;; and a backspace to move to the start of the line.  Here
+                     ;; we detect this and handle it like an ordinary "\r\n".
+                     ;;
+                     ;; For all other cases, coterm does not perform any
+                     ;; wrapping at all.
+                     (progn
                        (delete-char -1)
-                       (coterm--t-down-line proc-filt process)
-                       (setq coterm--t-col 0)
-                       (coterm--t-insert proc-filt process " " 0))
-
-                     (setq coterm--t-col (max (1- coterm--t-col) 0))
-                     (dirty))
+                       (setq coterm--t-col 0
+                             coterm--t-col-off 0)
+                       (move-to-column 0)
+                       (coterm--t-down-line proc-filt process))
+                   (cl-decf coterm--t-col)
+                   (setq coterm--t-col-off (- coterm--t-col (move-to-column coterm--t-col)))))
                 (?\C-g (ins) ;; (terminfo: bel)
                        (beep t))
                 ;; Ignore NUL, Shift Out, Shift In.
@@ -1063,27 +1083,29 @@ buffer and the scrolling region must cover the whole screen."
                        (coterm--t-up-line proc-filt process))
                    (?7 (ins) ;; Save cursor (terminfo: sc)
                        (setq coterm--t-saved-cursor
-                             (list coterm--t-row
-                                   coterm--t-col
+                             (list (coterm--t-row)
+                                   (coterm--t-col)
                                    ansi-color-context-region
                                    ansi-color-context)))
                    (?8 (ins) ;; Restore cursor (terminfo: rc)
                        (when-let ((cursor coterm--t-saved-cursor))
                          (setq coterm--t-saved-cursor nil)
-                         (setq coterm--t-row (min (car cursor) (1- coterm--t-height)))
-                         (setq cursor (cdr cursor))
-                         (setq coterm--t-col (min (car cursor) (1- coterm--t-width)))
+                         (coterm--t-goto
+                          (min (car cursor) (1- coterm--t-height))
+                          (progn (setq cursor (cdr cursor))
+                                 (min (car cursor) (1- coterm--t-width))))
                          (setq cursor (cdr cursor))
                          (setq ansi-color-context-region (car cursor))
-                         (setq ansi-color-context (cadr cursor))
-                         (dirty)))
+                         (setq ansi-color-context (cadr cursor))))
                    (?c (ins) ;; \Ec - Reset (terminfo: rs1)
                        (erase-buffer)
                        (setq ansi-color-context-region nil)
                        (setq ansi-color-context nil)
-                       (setq coterm--t-home-offset 0)
+                       (setq coterm--t-home-off 0)
                        (setq coterm--t-row 0)
+                       (setq coterm--t-row-off 0)
                        (setq coterm--t-col 0)
+                       (setq coterm--t-col-off 0)
                        (setq coterm--t-scroll-beg 0)
                        (setq coterm--t-scroll-end coterm--t-height)
                        (setq coterm--t-insert-mode nil))
@@ -1095,133 +1117,166 @@ buffer and the scrolling region must cover the whole screen."
                     (pcase (aref string (1- ctl-end))
                       (?m ;; Let `comint-output-filter-functions' handle this
                        (pass-through))
-                      (char
-                       (setq ctl-params (mapcar #'string-to-number
-                                                (split-string ctl-params ";")))
+                      ((or ?H ?f) ;; cursor motion (terminfo: cup,home)
                        (ins)
-                       (pcase char
-                         ((or ?H ?f) ;; cursor motion (terminfo: cup,home)
-                          (setq coterm--t-row
-                                (1- (max 1 (min (car-or-1) coterm--t-height))))
-                          (setq coterm--t-col
-                                (1- (max 1 (min (cadr-or-0) coterm--t-width))))
-                          (dirty))
-                         (?A ;; cursor up (terminfo: cuu, cuu1)
-                          (setq coterm--t-row (max (- coterm--t-row (car-or-1))
-                                                   coterm--t-scroll-beg))
-                          (dirty))
-                         (?B ;; cursor down (terminfo: cud)
-                          (setq coterm--t-row (min (+ coterm--t-row (car-or-1))
-                                                   (1- coterm--t-scroll-end)))
-                          (dirty))
-                         (?C ;; \E[C - cursor right (terminfo: cuf, cuf1)
-                          (setq coterm--t-col (min (+ coterm--t-col (car-or-1))
-                                                   (1- coterm--t-width)))
-                          (dirty))
-                         (?D ;; \E[D - cursor left (terminfo: cub)
-                          (setq coterm--t-col (max (- coterm--t-col (car-or-1))
-                                                   0))
-                          (dirty))
-                         (?E ;; \E[E - cursor down and column 0
-                          (setq coterm--t-row (min (+ coterm--t-row (car-or-1))
-                                                   (1- coterm--t-scroll-end)))
-                          (setq coterm--t-col 0)
-                          (dirty))
-                         (?F ;; \E[F - cursor up and column 0
-                          (setq coterm--t-row (max (- coterm--t-row (car-or-1))
-                                                   coterm--t-scroll-beg))
-                          (setq coterm--t-col 0)
-                          (dirty))
-                         (?G ;; \E[G - horizontal cursor position
-                          (setq coterm--t-col (min (1- (car-or-1))
-                                                   (1- coterm--t-width)))
-                          (dirty))
-                         ;; \E[J - clear to end of screen (terminfo: ed, clear)
-                         ((and ?J (guard (eq 0 (car ctl-params))))
-                          (coterm--t-delete-region coterm--t-row coterm--t-col))
-                         ((and ?J (guard (eq 1 (car ctl-params))))
-                          (coterm--t-delete-region 0 0 coterm--t-row
-                                                   coterm--t-col)
-                          (coterm--t-open-space
-                           proc-filt process coterm--t-row coterm--t-col))
-                         (?J (coterm--t-delete-region 0 0))
-                         ;; \E[K - clear to end of line (terminfo: el, el1)
-                         ((and ?K (guard (eq 1 (car ctl-params))))
-                          (coterm--t-delete-region coterm--t-row 0
-                                                   coterm--t-row coterm--t-col)
-                          (coterm--t-open-space proc-filt process 0 coterm--t-col))
-                         (?K (when (< coterm--t-col coterm--t-width)
-                               (coterm--t-delete-region
-                                coterm--t-row coterm--t-col
-                                coterm--t-row coterm--t-width)))
-                         (?L ;; \E[L - insert lines (terminfo: il, il1)
-                          (when (<= coterm--t-scroll-beg coterm--t-row
-                                    (1- coterm--t-scroll-end))
-                            (let ((lines
-                                   (min (- coterm--t-scroll-end coterm--t-row)
-                                        (car-or-1))))
-                              ;; Remove from bottom
-                              (coterm--t-delete-region
-                               (- coterm--t-scroll-end lines) 0
-                               coterm--t-scroll-end 0)
-                              ;; Insert at position
-                              (coterm--t-goto coterm--t-row 0)
-                              (coterm--t-open-space proc-filt process lines 0))))
-                         (?M ;; \E[M - delete lines (terminfo: dl, dl1)
-                          (when (<= coterm--t-scroll-beg coterm--t-row
-                                    (1- coterm--t-scroll-end))
-                            (let ((lines
-                                   (min (- coterm--t-scroll-end coterm--t-row)
-                                        (car-or-1))))
-                              ;; Insert at bottom
-                              (coterm--t-goto coterm--t-scroll-end 0)
-                              (coterm--t-open-space proc-filt process lines 0)
-                              ;; Remove at position
-                              (coterm--t-delete-region
-                               coterm--t-row 0
-                               (+ coterm--t-row lines) 0))))
-                         (?P ;; \E[P - delete chars (terminfo: dch, dch1)
-                          (coterm--t-delete-region
-                           coterm--t-row coterm--t-col
-                           coterm--t-row (+ coterm--t-col (car-or-1))))
-                         (?@ ;; \E[@ - insert spaces (terminfo: ich)
-                          (let ((width (min (car-or-1) (- coterm--t-width
-                                                          coterm--t-col -1))))
-                            (coterm--t-goto coterm--t-row coterm--t-col)
-                            (coterm--t-open-space proc-filt process 0 width)
-                            (cl-incf coterm--t-col width)
-                            (setq coterm--t-col (min coterm--t-col
-                                                     (1- coterm--t-width)))
-                            (dirty)))
-                         (?h ;; \E[?h - DEC Private Mode Set
-                          (pcase (car ctl-params)
-                            (47 ;; (terminfo: smcup)
-                             (coterm--t-switch-to-alternate-sub-buffer
-                              proc-filt process t))
-                            (4 ;; (terminfo: smir)
-                             (setq coterm--t-insert-mode t))))
-                         (?l ;; \E[?l - DEC Private Mode Reset
-                          (pcase (car ctl-params)
-                            (47 ;; (terminfo: rmcup)
-                             (coterm--t-switch-to-alternate-sub-buffer
-                              proc-filt process nil))
-                            (4 ;; (terminfo: rmir)
-                             (setq coterm--t-insert-mode nil))))
-                         (?n ;; \E[6n - Report cursor position (terminfo: u7)
-                          (process-send-string
-                           process
-                           ;; (terminfo: u6)
-                           (format "\e[%s;%sR"
-                                   (1+ coterm--t-row)
-                                   (1+ coterm--t-col))))
-                         (?r ;; \E[r - Set scrolling region (terminfo: csr)
-                          (let ((beg (1- (car-or-1)))
-                                (end (max 1 (cadr-or-0))))
-                            (setq coterm--t-scroll-beg
-                                  (if (< beg coterm--t-height) beg 0))
-                            (setq coterm--t-scroll-end
-                                  (if (<= 1 end coterm--t-height)
-                                      end coterm--t-height))))))))))))
+                       (coterm--t-goto
+                        (1- (max 1 (min (car-or-1) coterm--t-height)))
+                        (1- (max 1 (min (cadr-or-0) coterm--t-width)))))
+                      (?A ;; cursor up (terminfo: cuu, cuu1)
+                       (ins)
+                       (coterm--t-goto (max (- (coterm--t-row) (car-or-1))
+                                            coterm--t-scroll-beg)
+                                       (coterm--t-col)))
+                      (?B ;; cursor down (terminfo: cud)
+                       (ins)
+                       (coterm--t-goto (min (+ (coterm--t-row) (car-or-1))
+                                            (1- coterm--t-scroll-end))
+                                       (coterm--t-col)))
+                      (?C ;; \E[C - cursor right (terminfo: cuf, cuf1)
+                       (ins)
+                       (setq coterm--t-col (min (+ (coterm--t-col) (car-or-1))
+                                                (1- coterm--t-width)))
+                       (setq coterm--t-col-off (- coterm--t-col (move-to-column coterm--t-col))))
+                      (?D ;; \E[D - cursor left (terminfo: cub)
+                       (ins)
+                       (setq coterm--t-col (max (- (coterm--t-col) (car-or-1))
+                                                0))
+                       (setq coterm--t-col-off (- coterm--t-col (move-to-column coterm--t-col))))
+                      (?E ;; \E[E - cursor down and column 0
+                       (ins)
+                       (coterm--t-goto (min (+ (coterm--t-row) (car-or-1))
+                                            (1- coterm--t-scroll-end))
+                                       0))
+                      (?F ;; \E[F - cursor up and column 0
+                       (ins)
+                       (coterm--t-goto (max (- (coterm--t-row) (car-or-1))
+                                            coterm--t-scroll-beg)
+                                       0))
+                      (?G ;; \E[G - horizontal cursor position
+                       (ins)
+                       (setq coterm--t-col (min (1- (car-or-1))
+                                                (1- coterm--t-width)))
+                       (setq coterm--t-col-off (- coterm--t-col (move-to-column coterm--t-col))))
+                      ;; \E[J - clear to end of screen (terminfo: ed, clear)
+                      ((and ?J (guard (eq 0 (car (ctl-params*)))))
+                       (ins)
+                       (delete-region (point) (point-max)))
+                      ((and ?J (guard (eq 1 (car (ctl-params*)))))
+                       (ins)
+                       (let ((opoint (point))
+                             (orow (coterm--t-row))
+                             (ocol (coterm--t-col)))
+                         (goto-char coterm--t-home)
+                         (forward-line coterm--t-home-off)
+                         (delete-region (point) opoint)
+                         (unless (eobp)
+                           (coterm--t-apply-proc-filt
+                            proc-filt process
+                            (concat (make-string orow ?\n)
+                                    (unless (eolp)
+                                      (make-string ocol ?\s)))))
+                         (coterm--t-goto orow ocol)))
+                      (?J
+                       (ins)
+                       ;; Clear screen.  If not using alternative sub-buffer,
+                       ;; simply move home marker to point-max
+                       (setq coterm--t-row-off (coterm--t-row))
+                       (setq coterm--t-col-off (coterm--t-col))
+                       (if coterm--t-alternative-sub-buffer
+                           (delete-region coterm--t-home (point-max))
+                         (setq coterm--t-home-off 0)
+                         (goto-char (point-max))
+                         (unless (bolp)
+                           (cl-incf coterm--t-row-off)
+                           (setq coterm--t-home-off 1)
+                           (setq coterm--t-col-off
+                                 (- coterm--t-col-off (move-to-column coterm--t-col-off))))
+                         (set-marker coterm--t-home (point))))
+                      ;; \E[K - clear to end of line (terminfo: el, el1)
+                      ((and ?K (guard (eq 1 (car (ctl-params*)))))
+                       (ins)
+                       (let ((ocol (coterm--t-col)))
+                         (delete-region (point) (progn (forward-line 0) (point)))
+                         (unless (eolp)
+                           (coterm--t-insert proc-filt process (make-string ocol ?\s) 0))))
+                      ((and ?K (guard (eobp)))
+                       (pass-through))
+                      (?K
+                       (ins)
+                       (when (< (coterm--t-col) coterm--t-width)
+                         (let ((opoint (point)))
+                           (when (zerop (forward-line))
+                             (when (bolp) (backward-char))
+                             (delete-region opoint (point)))
+                           (goto-char opoint))))
+                      (?L ;; \E[L - insert lines (terminfo: il, il1)
+                       (ins)
+                       (when (<= coterm--t-scroll-beg (coterm--t-row)
+                                 (1- coterm--t-scroll-end))
+                         (let ((coterm--t-scroll-beg coterm--t-row))
+                           (dotimes (_ (min (- coterm--t-scroll-end coterm--t-row)
+                                            (car-or-1)))
+                             (coterm--t-up-line proc-filt process)))))
+                      (?M ;; \E[M - delete lines (terminfo: dl, dl1)
+                       (ins)
+                       (when (<= coterm--t-scroll-beg (coterm--t-row)
+                                 (1- coterm--t-scroll-end))
+                         (let ((coterm--t-scroll-beg coterm--t-row)
+                               (orow coterm--t-row)
+                               (ocol (coterm--t-col)))
+                           (coterm--t-goto (1- coterm--t-scroll-end) ocol)
+                           (dotimes (_ (min (- coterm--t-scroll-end orow)
+                                            (car-or-1)))
+                             (coterm--t-down-line proc-filt process))
+                           (coterm--t-goto orow ocol))))
+                      (?P ;; \E[P - delete chars (terminfo: dch, dch1)
+                       (ins)
+                       (when (zerop coterm--t-row-off)
+                         (let ((opoint (point)))
+                           (move-to-column (+ (coterm--t-col) (car-or-1)))
+                           (delete-region opoint (point)))))
+                      (?@ ;; \E[@ - insert spaces (terminfo: ich)
+                       (ins)
+                       (let ((width (min (car-or-1) (max 0 (- coterm--t-width
+                                                              (coterm--t-col)))))
+                             (opoint (point)))
+                         (unless (eolp)
+                           (coterm--t-apply-proc-filt proc-filt process
+                                                      (make-string width ?\s))
+                           (goto-char opoint))))
+                      (?h ;; \E[?h - DEC Private Mode Set
+                       (ins)
+                       (pcase (car (ctl-params*))
+                         (47 ;; (terminfo: smcup)
+                          (coterm--t-switch-to-alternate-sub-buffer
+                           proc-filt process t))
+                         (4 ;; (terminfo: smir)
+                          (setq coterm--t-insert-mode t))))
+                      (?l ;; \E[?l - DEC Private Mode Reset
+                       (ins)
+                       (pcase (car (ctl-params*))
+                         (47 ;; (terminfo: rmcup)
+                          (coterm--t-switch-to-alternate-sub-buffer
+                           proc-filt process nil))
+                         (4 ;; (terminfo: rmir)
+                          (setq coterm--t-insert-mode nil))))
+                      (?n ;; \E[6n - Report cursor position (terminfo: u7)
+                       (ins)
+                       (process-send-string
+                        process
+                        ;; (terminfo: u6)
+                        (format "\e[%s;%sR"
+                                (1+ (coterm--t-row))
+                                (1+ (coterm--t-col)))))
+                      (?r ;; \E[r - Set scrolling region (terminfo: csr)
+                       (ins)
+                       (let ((beg (1- (car-or-1)))
+                             (end (max 1 (cadr-or-0))))
+                         (setq coterm--t-scroll-beg
+                               (if (< beg coterm--t-height) beg 0))
+                         (setq coterm--t-scroll-end
+                               (if (<= 1 end coterm--t-height)
+                                   end coterm--t-height))))))))))
 
             (cond
              ((setq match (string-match coterm--t-control-seq-prefix-regexp
@@ -1235,12 +1290,13 @@ buffer and the scrolling region must cover the whole screen."
               (ins)))
 
             ;; Synchronize pmark and remove all trailing whitespace after it.
-            (coterm--t-adjust-pmark proc-filt process)
-            (widen)
-            (goto-char pmark)
+            (unless (and (zerop coterm--t-col-off) (zerop coterm--t-row-off))
+              (coterm--t-insert proc-filt process "" 0))
+            (set-marker pmark (point))
             (skip-chars-forward " \n")
             (when (eobp)
-              (delete-region pmark (point))))
+              (delete-region pmark (point)))
+            (widen))
 
           ;; Restore point (this restores it only for the selected window)
           (goto-char restore-point)
