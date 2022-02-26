@@ -787,7 +787,15 @@ If STR contains newlines, the caller must take care that
           (forward-line 0))
         (set-marker coterm--t-home (point))
         (setq coterm--t-row (1- coterm--t-height))
-        (goto-char opoint))))))
+        (goto-char opoint)))
+
+    (cl-labels
+        ((hook ()
+           (remove-hook 'coterm-t-after-insert-hook #'hook t)
+           (unless coterm--t-alternative-sub-buffer
+             (let ((coterm-scroll-snap-mode t))
+               (coterm--scroll-snap)))))
+      (add-hook 'coterm-t-after-insert-hook #'hook nil t)))))
 
 (defun coterm--t-down-line (proc-filt process)
   "Go down one line or scroll if at bottom.
