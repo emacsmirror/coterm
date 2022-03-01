@@ -892,6 +892,23 @@ insertion of empty lines."
       (cl-decf coterm--t-row)
       (cl-decf coterm--t-row-off)))))
 
+(defun coterm--t-clear-screen ()
+  "Clear terminal screen.
+If not using alternative sub-buffer, simply move home marker to
+point-max"
+  (setq coterm--t-row-off (coterm--t-row))
+  (setq coterm--t-col-off (coterm--t-col))
+  (if coterm--t-alternative-sub-buffer
+      (delete-region coterm--t-home (point-max))
+    (setq coterm--t-home-off 0)
+    (goto-char (point-max))
+    (unless (bolp)
+      (cl-incf coterm--t-row-off)
+      (setq coterm--t-home-off 1)
+      (setq coterm--t-col-off
+            (- coterm--t-col-off (move-to-column coterm--t-col-off))))
+    (set-marker coterm--t-home (point))))
+
 (defun coterm--t-insert (proc-filt process str newlines)
   "Insert STR at point using PROC-FILT and PROCESS.
 Synchronise PROCESS's mark beforehand and insert at its position.
@@ -1169,38 +1186,27 @@ terminal screen."
                       ((and ?J (guard (eq 0 (car (ctl-params*)))))
                        (ins)
                        (when (zerop coterm--t-row-off)
-                         (delete-region (point) (point-max))))
+                         (if (= (point) coterm--t-home)
+                             (coterm--t-clear-screen)
+                           (delete-region (point) (point-max)))))
                       ((and ?J (guard (eq 1 (car (ctl-params*)))))
                        (ins)
-                       (let ((opoint (point))
-                             (orow (coterm--t-row))
-                             (ocol (coterm--t-col)))
-                         (goto-char coterm--t-home)
-                         (forward-line coterm--t-home-off)
-                         (delete-region (point) opoint)
-                         (unless (eobp)
-                           (coterm--t-apply-proc-filt
-                            proc-filt process
-                            (concat (make-string orow ?\n)
-                                    (unless (eolp)
-                                      (make-string ocol ?\s)))))
-                         (coterm--t-goto orow ocol)))
-                      (?J
-                       (ins)
-                       ;; Clear screen.  If not using alternative sub-buffer,
-                       ;; simply move home marker to point-max
-                       (setq coterm--t-row-off (coterm--t-row))
-                       (setq coterm--t-col-off (coterm--t-col))
-                       (if coterm--t-alternative-sub-buffer
-                           (delete-region coterm--t-home (point-max))
-                         (setq coterm--t-home-off 0)
-                         (goto-char (point-max))
-                         (unless (bolp)
-                           (cl-incf coterm--t-row-off)
-                           (setq coterm--t-home-off 1)
-                           (setq coterm--t-col-off
-                                 (- coterm--t-col-off (move-to-column coterm--t-col-off))))
-                         (set-marker coterm--t-home (point))))
+                       (if (zerop coterm--t-row-off)
+                           (let ((opoint (point))
+                                 (orow (coterm--t-row))
+                                 (ocol (coterm--t-col)))
+                             (goto-char coterm--t-home)
+                             (forward-line coterm--t-home-off)
+                             (delete-region (point) opoint)
+                             (unless (eobp)
+                               (coterm--t-apply-proc-filt
+                                proc-filt process
+                                (concat (make-string orow ?\n)
+                                        (unless (eolp)
+                                          (make-string ocol ?\s)))))
+                             (coterm--t-goto orow ocol))
+                         (coterm--t-clear-screen)))
+                      (?J (ins) (coterm--t-clear-screen))
                       ;; \E[K - clear to end of line (terminfo: el, el1)
                       ((and ?K (guard (eq 1 (car (ctl-params*)))))
                        (ins)
