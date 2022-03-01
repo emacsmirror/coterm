@@ -983,11 +983,11 @@ terminal screen."
             (setq string (concat fragment string))
             (setq coterm--t-unhandled-fragment nil))
 
+          (setq restore-point (if (= (point) pmark) pmark (point-marker)))
+          (setq old-pmark (copy-marker pmark window-point-insertion-type))
+
           (save-restriction
             (coterm--narrow-to-process-output pmark)
-
-            (setq restore-point (if (= (point) pmark) pmark (point-marker)))
-            (setq old-pmark (copy-marker pmark window-point-insertion-type))
             (goto-char pmark)
             ;; (setq coterm--t-row nil)
             (setq coterm--t-col nil)
@@ -1303,8 +1303,7 @@ terminal screen."
             (set-marker pmark (point))
             (skip-chars-forward " \n")
             (when (eobp)
-              (delete-region pmark (point)))
-            (widen))
+              (delete-region pmark (point))))
 
           ;; Restore point (this restores it only for the selected window)
           (goto-char restore-point)
