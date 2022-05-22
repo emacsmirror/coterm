@@ -628,7 +628,9 @@ of the buffer.  More precisely, this variable can only be
 non-zero if there are no \\n characters after point.")
 (defvar-local coterm--t-col-off 0
   "How many cols to the right the current position actually is.
-Non-zero only if point is on the end of line.")
+Non-zero only if point is on the end of line or on a character
+that spans more than one columen.  In the latter case, this
+variable's value can be negative.")
 
 (defvar-local coterm--t-row nil
   "Cache of current terminal row if non-nil.")
@@ -922,7 +924,7 @@ terminal screen."
   (unless (and (zerop coterm--t-col-off) (zerop coterm--t-row-off))
     (coterm--t-apply-proc-filt proc-filt process
                                (concat (make-string coterm--t-row-off ?\n)
-                                       (make-string coterm--t-col-off ?\s)))
+                                       (make-string (max 0 coterm--t-col-off) ?\s)))
     (setq coterm--t-col-off 0 coterm--t-row-off 0))
   (cond
    ((not (zerop newlines))
@@ -1094,7 +1096,8 @@ terminal screen."
                              coterm--t-col-off 0)
                        (move-to-column 0)
                        (coterm--t-down-line proc-filt process))
-                   (cl-decf coterm--t-col)
+                   ;; (debug)
+                   (setq coterm--t-col (max 0 (1- coterm--t-col)))
                    (setq coterm--t-col-off (- coterm--t-col (move-to-column coterm--t-col)))))
                 (?\C-g (ins) ;; (terminfo: bel)
                        (beep t))
