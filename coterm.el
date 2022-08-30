@@ -667,15 +667,6 @@ non-nil. Set it to nil to invalidate the cache."
 (defvar coterm-t-after-insert-hook nil
   "Hook run after inserting process output.")
 
-(defun coterm--comint-strip-CR (_)
-  "Remove all \\r characters from last output."
-  (save-excursion
-    (goto-char comint-last-output-start)
-    (let ((pmark (process-mark (get-buffer-process (current-buffer)))))
-      (while (progn (skip-chars-forward "^\r")
-                    (< (point) pmark))
-        (delete-char 1)))))
-
 (defun coterm--init ()
   "Initialize current buffer for coterm."
   (when-let ((process (get-buffer-process (current-buffer))))
@@ -686,7 +677,6 @@ non-nil. Set it to nil to invalidate the cache."
     (setq coterm--t-scroll-end coterm--t-height)
 
     (setq-local comint-inhibit-carriage-motion t)
-    (add-hook 'comint-output-filter-functions #'coterm--comint-strip-CR nil t)
     (coterm-auto-char-mode)
     (coterm-auto-char-lighter-mode)
 
@@ -917,7 +907,11 @@ Synchronise PROCESS's mark beforehand and insert at its position.
 NEWLINES is the number of newlines STR contains.  Unless it is
 zero, insertion must happen at the end of accessible portion of
 buffer and the scrolling region must begin at the top of the
-terminal screen."
+terminal screen.
+
+This function also converts all occuences of \"\\r\\n\" into
+\"\\n\" in STR before inserting it."
+  (setq str (string-replace "\r" "" str))
   (unless (zerop coterm--t-row-off)
     (setq coterm--t-col-off (coterm--t-col))
     (goto-char (point-max)))
