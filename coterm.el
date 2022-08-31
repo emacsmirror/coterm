@@ -6,7 +6,7 @@
 ;; Author: jakanakaevangeli <jakanakaevangeli@chiru.no>
 ;; Version: 1.5
 ;; Keywords: processes
-;; Package-Requires: ((emacs "26.1"))
+;; Package-Requires: ((emacs "26.1") (compat "28.1.2.0"))
 ;; URL: https://repo.or.cz/emacs-coterm.git
 
 ;; This file is part of GNU Emacs.
@@ -129,8 +129,10 @@
 ;;; Code:
 
 (require 'term)
+(require 'compat)
 (eval-when-compile
-  (require 'cl-lib))
+  (require 'cl-lib)
+  (require 'subr-x))
 
 ;;; Mode functions and configuration
 
@@ -737,8 +739,12 @@ If STR contains newlines, the caller must take care that
   (when-let ((context ansi-color-context-region)
              (marker (cadr context)))
     (set-marker marker (point)))
-  (set-marker (process-mark process) (point))
-  (funcall proc-filt process str)
+  (let ((pmark (process-mark process)))
+    (set-marker pmark (point))
+    (funcall proc-filt process str)
+    ;; Needed for emacs version < 27 with buggy functions in
+    ;; `comint-output-filter-functions' which upredictably move point
+    (goto-char pmark))
   (unless (string-empty-p str)
     (setq coterm--t-col nil)))
 
