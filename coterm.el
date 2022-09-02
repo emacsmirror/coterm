@@ -4,7 +4,7 @@
 
 ;; Filename: coterm.el
 ;; Author: jakanakaevangeli <jakanakaevangeli@chiru.no>
-;; Version: 1.5
+;; Version: 1.6
 ;; Keywords: processes
 ;; Package-Requires: ((emacs "26.1") (compat "28.1.2.0"))
 ;; URL: https://repo.or.cz/emacs-coterm.git
