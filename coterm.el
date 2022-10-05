@@ -40,8 +40,8 @@
 ;; `coterm-auto-char-mode': if enabled, coterm will enter and leave
 ;; `coterm-char-mode' automatically as appropriate.  For example, if you
 ;; execute "less" in a shell buffer, coterm will detect that "less" is running
-;; and automatically enable char mode so that you can interact with less
-;; normally.  Once you leave the "less" program, coterm will disable char mode
+;; and automatically enable char mode so that you can interact with "less"
+;; directly.  Once you leave the "less" program, coterm will disable char mode
 ;; so that you can interact with your shell in the normal comint way.  This
 ;; mode is enabled by default in all coterm comint buffers.
 ;;
@@ -88,7 +88,7 @@
 ;;
 ;; If some TUI programs misbehave, try checking your TERM environment variable
 ;; with 'echo $TERM' in your coterm enabled M-x shell.  It should normally be
-;; set to "coterm-color".  If if isn't, it might be that one of your shell
+;; set to "eterm-color".  If if isn't, it might be that one of your shell
 ;; initialization files (~/.bashrc) changes it, so check for that and remove
 ;; the change.
 ;;
