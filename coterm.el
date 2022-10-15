@@ -480,6 +480,7 @@ active if these status prompt erasures are detected."
       (forward-line -1)
       (prog1 (looking-at
               (concat "\\(?:.*\n\\)?"
+                      (regexp-opt '("[statusline] " "")) ; mpv -v
                       (regexp-opt '("(Paused) " "(Buffering) " "(...) " ""))
                       "\\(?:[AV]\\|AV\\): "
                       "-?[0-9][0-9]:[0-9][0-9]:[0-9][0-9] / "
