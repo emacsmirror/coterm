@@ -59,6 +59,24 @@
 ;; The command `coterm-char-mode-cycle' is a handy command to cycle between
 ;; automatic char-mode, char-mode enabled and char-mode disabled.
 ;;
+;;;; Shell integration:
+;;
+;; Optionally, you can configure your shell to demarcate prompts and
+;; command output through OSC 133 escape sequences.  To do so, add the
+;; following to your shell init, say ~/.bashrc:
+;;
+;;   case "$TERM" in eterm-*)
+;;     PS0='\e]133;C\a'"$PS0"
+;;     PS1='\[\e]133;D;$?\a\]'"$PS1"
+;;   esac
+;;
+;; If coterm sees any of those sequences, it disables the heuristic
+;; `coterm-auto-char-mode' and uses only the OSC 133 information to
+;; decide when to switch between char and line mode.
+;;
+;; The above settings will also cause coterm to display the exit
+;; status of each command in the mode line.  If you wish to disable
+;; that feature, leave out the ";$?" part in PS1.
 ;;
 ;;;; Installation:
 ;;
@@ -94,7 +112,7 @@
 ;; need to manually enable and disable char mode.
 ;;
 ;;
-;;;; Some common probles:
+;;;; Some common problems:
 ;;
 ;; If some TUI programs misbehave, try checking your TERM environment variable
 ;; with 'echo $TERM' in your coterm enabled M-x shell.  It should normally be
@@ -138,6 +156,7 @@
 
 ;;; Code:
 
+(require 'comint)
 (require 'term)
 (require 'compat)
 (eval-when-compile
@@ -717,6 +736,14 @@ non-nil. Set it to nil to invalidate the cache."
     (setq-local comint-inhibit-carriage-motion t)
     (coterm-auto-char-mode)
     (coterm-auto-char-lighter-mode)
+
+    (when (featurep 'ansi-osc)          ;New in Emacs 29
+      (add-hook 'comint-output-filter-functions
+                #'comint-osc-process-output nil t)
+      (cl-pushnew '("133" . coterm--osc-133-handler)
+                  ansi-osc-handlers :test #'equal))
+    (setq mode-line-process
+          `("" ,mode-line-process (:eval (coterm--formatted-exit-status))))
 
     (add-function :filter-return
                   (local 'window-adjust-process-window-size-function)
@@ -1375,6 +1402,61 @@ This function also converts all occuences of \"\\r\\n\" into
             (set-marker old-pmark nil))
 
           (run-hooks 'coterm-t-after-insert-hook))))))
+
+;;; Shell integration
+;;
+;; We follow VTE's implementation of OSC 133, see e.g.
+;; https://gitlab.gnome.org/GNOME/vte/-/blob/0.84.1/src/vte.sh.in#L109-132.
+;;
+;; We recommend ending the OSC 133 sequence with BEL instead of ESC \
+;; because the trailing backslash can interfere with the subsequent
+;; content of PS0 and PS1.
+
+(defvar-local coterm--last-exit-status nil
+  "The exit status last reported by an OSC 133 D escape sequence.")
+
+(defun coterm--osc-133-handler (_ text)
+  "Function reacting to OSC 133 escape sequences.
+This is intended to be used as a member of `ansi-osc-handlers'."
+  (pcase (string-to-char text)
+    ;; Nothing interesting to do with cases A and B?
+    (?C (coterm-auto-char-mode -1)
+        (coterm-char-mode)
+        (setq coterm--last-exit-status nil))
+    (?D (coterm-auto-char-mode -1)
+        (coterm-char-mode -1)
+        (setq coterm--last-exit-status
+              (when (string-match "[0-9]+" text)
+                (string-to-number (match-string 0 text)))))
+    (?L (unless (bolp)
+          (insert ?\n)
+          (backward-char)
+          ;; After inserting a new line, adjust process mark and
+          ;; `coterm--t-row' accordingly.
+          (when-let* ((proc (get-buffer-process (current-buffer)))
+                      (pmark (process-mark proc)))
+            (when (= pmark (point))
+              (move-marker pmark (1+ (point)))))
+          (when coterm--t-row
+            (cl-incf coterm--t-row))))))
+
+(defvar coterm--formatted-exit-status
+  (let ((fmt #("/SIG%s" 1 6 ( help-echo "Last command received a signal"
+                              face error)))
+        (map (make-hash-table))
+        (i 128))
+    (puthash 0 #("/0" 1 2 (help-echo "Last command succeeded" face success)) map)
+    (dolist (sig (cdr (reverse (signal-names))))
+      (puthash (cl-incf i) (format fmt sig) map))
+    map)
+  "Hash table mapping exit statuses to formatted strings.")
+
+(defun coterm--formatted-exit-status ()
+  "The value of `coterm--last-exit-status' formatted for the mode line."
+  (when coterm--last-exit-status
+    (or (gethash coterm--last-exit-status coterm--formatted-exit-status)
+        (format #("/%s" 1 3 (face warning help-echo "Last command failed"))
+                coterm--last-exit-status))))
 
 (provide 'coterm)
 ;;; coterm.el ends here
