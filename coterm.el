@@ -6,7 +6,7 @@
 ;; Author: Miha Rihtaršič <miha@kamnitnik.top>
 ;; Version: 1.6
 ;; Keywords: processes
-;; Package-Requires: ((emacs "26.1") (compat "28.1.2.0"))
+;; Package-Requires: ((emacs "26.1") (compat "31.1"))
 ;; URL: https://repo.or.cz/emacs-coterm.git
 
 ;; This file is part of GNU Emacs.
@@ -212,29 +212,38 @@ process."
 (make-obsolete 'comint-exec-1@coterm-config nil "1.7")
 (advice-remove #'comint-exec-1 'comint-exec-1@coterm-config)
 
-(defun coterm--comint-exec (fun buffer name command startfile switches)
-  "Advice for `comint-exec', kicks in only when `coterm-mode' is non-nil."
-  (if (not coterm-mode)
-      (funcall fun buffer name command startfile switches)
-    (cl-letf (((symbol-function #'comint-term-environment)
-               (lambda ()
-                 (let (ret)
-                   (push (format "TERMINFO=%s" data-directory) ret)
-                   (when coterm-term-name
-                     (push (format "TERM=%s" coterm-term-name) ret))
-                   (when coterm-termcap-format
-                     (push (format coterm-termcap-format "TERMCAP="
-                                   coterm-term-name
-                                   (floor (window-screen-lines))
-                                   (window-max-chars-per-line))
-                           ret))
-                   ret))))
-      (funcall fun buffer name "sh" startfile ; Adapted from `term-exec-1'
-               `("-c" "stty -nl sane -echo && exec \"$@\""
-                 "coterm" ,command ,@switches))
-      (add-function :around (process-filter (get-buffer-process buffer))
-                    #'coterm--t-emulate-terminal)
-      buffer)))
+(defvar coterm--terminfo nil
+  "Memoization place for function `coterm--terminfo'.")
+
+(defun coterm--terminfo (name)
+  "Terminfo information for a terminal named NAME."
+  (let ((file (expand-file-name (format "%c/%s" (string-to-char name) name)
+                                data-directory)))
+    (cond ((not (file-readable-p file)) nil)
+          ((file-remote-p default-directory)
+           (with-memoization (alist-get name coterm--terminfo nil nil #'equal)
+             (with-temp-buffer
+               (set-buffer-multibyte nil)
+               (insert-file-contents file)
+               (base64-encode-region (point-min) (point-max) t)
+               (insert "TERMINFO=b64:")
+               (buffer-string))))
+          (t (format "TERMINFO=%s" (directory-file-name data-directory))))))
+
+(defun coterm-term-environment ()
+  "Return an environment variable list for terminal configuration."
+  (when coterm-term-name
+    (let (ret)
+      (when coterm-termcap-format
+        (push (format coterm-termcap-format "TERMCAP="
+                      coterm-term-name
+                      (floor (window-screen-lines))
+                      (window-max-chars-per-line))
+              ret))
+      (when-let* ((terminfo (coterm--terminfo coterm-term-name)))
+        (push terminfo ret))
+      (push (format "TERM=%s" coterm-term-name) ret)
+      ret)))
 
 ;;;###autoload
 (defun coterm-apply (&rest args)
@@ -264,6 +273,19 @@ If you prefer enabling coterm only for a specific comint instead of
 globally, use `coterm-apply.'"
   :global t
   :group 'comint)
+
+(defun coterm--comint-exec (fun buffer name command startfile switches)
+  "Advice for `comint-exec', kicks in only when `coterm-mode' is non-nil."
+  (if (not coterm-mode)
+      (funcall fun buffer name command startfile switches)
+    (cl-letf (((symbol-function #'comint-term-environment)
+               #'coterm-term-environment))
+      (funcall fun buffer name "sh" startfile ; Adapted from `term-exec-1'
+               `("-c" "stty -nl sane -echo && exec \"$@\""
+                 "coterm" ,command ,@switches))
+      (add-function :around (process-filter (get-buffer-process buffer))
+                    #'coterm--t-emulate-terminal)
+      buffer)))
 
 ;; We don't control the comint initialization order: first process
 ;; then major mode, or vice-versa.  So we need both below.
